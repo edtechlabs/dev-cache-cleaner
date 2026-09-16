@@ -221,11 +221,12 @@ app.innerHTML = `
         </div>
       </section>
 
-      <section class="stats">
+      <section class="stats scanner-stats">
         <div class="stat card"><span>Total reclaimable</span><strong id="scanTotalSize">—</strong></div>
         <div class="stat card"><span>Artifacts found</span><strong id="scanArtifactCount">—</strong></div>
         <div class="stat card"><span>Projects</span><strong id="scanProjectCount">—</strong></div>
         <div class="stat card"><span>Visible / selected</span><strong id="scanVisibleCount">—</strong></div>
+        <div class="stat card"><span>Selected space</span><strong id="scanSelectedSize">—</strong></div>
       </section>
 
       <section class="quick card">
@@ -587,12 +588,18 @@ function updateScanStats() {
   const total = scanState.report?.totalBytes ?? 0;
   const artifacts = scanState.report?.artifactCount ?? 0;
   const projects  = scanState.report?.projectCount ?? 0;
+  const selectedSize = scanState.report
+    ? scanState.report.artifacts
+      .filter((artifact) => scanState.selected.has(artifact.path))
+      .reduce((sum, artifact) => sum + artifact.sizeBytes, 0)
+    : 0;
   $('scanTotalSize').textContent = total ? formatBytes(total) : '—';
   $('scanArtifactCount').textContent = artifacts || '—';
   $('scanProjectCount').textContent = projects || '—';
   $('scanVisibleCount').textContent = scanState.report
     ? `${items.length} / ${scanState.selected.size} sel`
     : '—';
+  $('scanSelectedSize').textContent = scanState.report ? formatBytes(selectedSize) : '—';
   $('scanTableStatus').textContent = scanState.report
     ? `${items.length} of ${artifacts} artifacts visible`
     : 'Set a root directory and click Scan.';

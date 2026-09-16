@@ -25,6 +25,8 @@ Click any results-table column heading to sort it; click again to reverse the
 order. The Size, Last modified, and Age columns start with largest/newest or
 oldest-first views as appropriate. The sort dropdown remains available for
 the same fields.
+The scanner also shows the combined disk space for the currently selected
+artifacts and updates it as selections change.
 
 The standalone `cache-cleaner` CLI supports scanning and listing targets,
 JSON output, dry runs, selective or category-based cleanup, permanent-delete

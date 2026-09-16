@@ -83,6 +83,7 @@ input, select {
 
 /* ── Stats ── */
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 14px 0; }
+.scanner-stats { grid-template-columns: repeat(5, 1fr); }
 .stat { padding: 16px; }
 .stat span { display: block; color: #94a3b8; font-size: 13px; }
 .stat strong { display: block; margin-top: 5px; font-size: 21px; }
@@ -246,6 +247,7 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
 
 @media (max-width: 1400px) {
   .scanner-config-grid { grid-template-columns: 1fr 1fr 1fr; }
+  .scanner-stats { grid-template-columns: repeat(3, 1fr); }
 }
 
 /* ── Confirmation modal ── */
