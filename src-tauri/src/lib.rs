@@ -1,10 +1,12 @@
 use chrono::{DateTime, Utc};
 use glob::glob;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::mpsc;
 use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
@@ -168,6 +170,11 @@ struct ProjectProgress {
 struct ProjectArtifactBatch {
     root: String,
     artifacts: Vec<ProjectArtifact>,
+}
+
+enum ArtifactSizingEvent {
+    Progress { path: String, files_scanned: u64 },
+    Complete { index: usize, artifact: Option<ProjectArtifact> },
 }
 
 fn emit_project_progress(app: Option<&AppHandle>, progress: ProjectProgress) {
@@ -1660,9 +1667,8 @@ fn scan_projects_impl(
     }
 
     let max_depth = options.max_depth.unwrap_or(8);
-    let min_size  = options.min_size_bytes.unwrap_or(0);
-    let mut artifacts: Vec<ProjectArtifact> = Vec::new();
-    let mut emitted_artifact_count = 0usize;
+    let min_size = options.min_size_bytes.unwrap_or(0);
+    let mut candidates: Vec<ProjectArtifact> = Vec::new();
     let mut directories_scanned = 0u64;
 
     emit_project_progress(
@@ -1701,59 +1707,30 @@ fn scan_projects_impl(
         }
 
         if let Some(kind) = detect_artifact_kind(&name, entry.path()) {
-            let artifact_path = entry.path().display().to_string();
-            let stats = path_stats_with_progress(entry.path(), |files_scanned| {
-                let found = artifacts.len() as u64;
-                let bytes = artifacts.iter().map(|artifact| artifact.size_bytes).sum();
-                emit_project_progress(
-                    app,
-                    ProjectProgress {
-                        phase: "scan-size",
-                        current: directories_scanned,
-                        total: None,
-                        path: format!("{} ({} files measured)", artifact_path, files_scanned),
-                        found,
-                        bytes,
-                    },
-                );
+            let parent = entry.path().parent().unwrap_or(entry.path());
+            let modified_secs = entry.metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+
+            candidates.push(ProjectArtifact {
+                path: entry.path().display().to_string(),
+                dir_name: name.to_string(),
+                artifact_kind: kind.to_string(),
+                project_name: parent.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                project_path: parent.display().to_string(),
+                size_bytes: 0,
+                file_count: 0,
+                modified_secs,
             });
-            if stats.size_bytes >= min_size {
-                let parent = entry.path().parent().unwrap_or(entry.path());
-                let modified_secs = entry.metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
-
-                artifacts.push(ProjectArtifact {
-                    path:         entry.path().display().to_string(),
-                    dir_name:     name.to_string(),
-                    artifact_kind: kind.to_string(),
-                    project_name: parent.file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_default(),
-                    project_path: parent.display().to_string(),
-                    size_bytes:   stats.size_bytes,
-                    file_count:   stats.file_count,
-                    modified_secs,
-                });
-
-                if artifacts.len() - emitted_artifact_count >= 25 {
-                    emit_project_artifact_batch(
-                        app,
-                        &root,
-                        &artifacts[emitted_artifact_count..],
-                    );
-                    emitted_artifact_count = artifacts.len();
-                }
-            }
             it.skip_current_dir(); // never recurse inside artifact dirs
         }
 
         if directories_scanned % 25 == 0 {
-            let found = artifacts.len() as u64;
-            let bytes = artifacts.iter().map(|artifact| artifact.size_bytes).sum();
             emit_project_progress(
                 app,
                 ProjectProgress {
@@ -1761,12 +1738,135 @@ fn scan_projects_impl(
                     current: directories_scanned,
                     total: None,
                     path: entry.path().display().to_string(),
-                    found,
-                    bytes,
+                    found: candidates.len() as u64,
+                    bytes: 0,
                 },
             );
         }
     }
+
+    let candidate_count = candidates.len();
+    emit_project_progress(
+        app,
+        ProjectProgress {
+            phase: "scan-size",
+            current: 0,
+            total: Some(candidate_count as u64),
+            path: root.display().to_string(),
+            found: 0,
+            bytes: 0,
+        },
+    );
+
+    let mut indexed_artifacts = Vec::new();
+    let mut emitted_artifact_count = 0usize;
+    let mut measured_count = 0u64;
+    let mut measured_bytes = 0u64;
+
+    if candidate_count > 0 {
+        let available_workers = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(2);
+        let worker_count = available_workers.min(4).min(candidate_count).max(1);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(worker_count)
+            .thread_name(|index| format!("artifact-sizer-{index}"))
+            .build()
+            .map_err(|error| format!("Could not start artifact sizing workers: {error}"))?;
+        let (sender, receiver) = mpsc::channel();
+
+        std::thread::scope(|scope| -> Result<(), String> {
+            let producer = scope.spawn(move || {
+                pool.install(|| {
+                    candidates.into_par_iter().enumerate().for_each_with(
+                        sender,
+                        |sender, (index, mut artifact)| {
+                            let progress_path = artifact.path.clone();
+                            let stats = path_stats_with_progress(
+                                Path::new(&artifact.path),
+                                |files_scanned| {
+                                    let _ = sender.send(ArtifactSizingEvent::Progress {
+                                        path: progress_path.clone(),
+                                        files_scanned,
+                                    });
+                                },
+                            );
+                            artifact.size_bytes = stats.size_bytes;
+                            artifact.file_count = stats.file_count;
+                            let artifact = (stats.size_bytes >= min_size).then_some(artifact);
+                            let _ = sender.send(ArtifactSizingEvent::Complete { index, artifact });
+                        },
+                    );
+                });
+            });
+
+            for event in receiver {
+                match event {
+                    ArtifactSizingEvent::Progress { path, files_scanned } => {
+                        emit_project_progress(
+                            app,
+                            ProjectProgress {
+                                phase: "scan-size",
+                                current: measured_count,
+                                total: Some(candidate_count as u64),
+                                path: format!("{path} ({files_scanned} files measured)"),
+                                found: indexed_artifacts.len() as u64,
+                                bytes: measured_bytes,
+                            },
+                        );
+                    }
+                    ArtifactSizingEvent::Complete { index, artifact } => {
+                        measured_count += 1;
+                        if let Some(artifact) = artifact {
+                            measured_bytes = measured_bytes.saturating_add(artifact.size_bytes);
+                            indexed_artifacts.push((index, artifact));
+                        }
+
+                        if indexed_artifacts.len() - emitted_artifact_count >= 25 {
+                            let batch: Vec<ProjectArtifact> = indexed_artifacts
+                                [emitted_artifact_count..]
+                                .iter()
+                                .map(|(_, artifact)| artifact.clone())
+                                .collect();
+                            emit_project_artifact_batch(app, &root, &batch);
+                            emitted_artifact_count = indexed_artifacts.len();
+                        }
+
+                        emit_project_progress(
+                            app,
+                            ProjectProgress {
+                                phase: "scan-size",
+                                current: measured_count,
+                                total: Some(candidate_count as u64),
+                                path: root.display().to_string(),
+                                found: indexed_artifacts.len() as u64,
+                                bytes: measured_bytes,
+                            },
+                        );
+                    }
+                }
+            }
+
+            producer
+                .join()
+                .map_err(|_| "Artifact sizing worker panicked".to_string())?;
+            Ok(())
+        })?;
+    }
+
+    if emitted_artifact_count < indexed_artifacts.len() {
+        let batch: Vec<ProjectArtifact> = indexed_artifacts[emitted_artifact_count..]
+            .iter()
+            .map(|(_, artifact)| artifact.clone())
+            .collect();
+        emit_project_artifact_batch(app, &root, &batch);
+    }
+
+    indexed_artifacts.sort_by_key(|(index, _)| *index);
+    let artifacts: Vec<ProjectArtifact> = indexed_artifacts
+        .into_iter()
+        .map(|(_, artifact)| artifact)
+        .collect();
 
     let total_bytes     = artifacts.iter().map(|a| a.size_bytes).sum();
     let artifact_count  = artifacts.len() as u64;
@@ -1774,10 +1874,6 @@ fn scan_projects_impl(
         .map(|a| a.project_path.as_str())
         .collect::<HashSet<_>>()
         .len() as u64;
-
-    if emitted_artifact_count < artifacts.len() {
-        emit_project_artifact_batch(app, &root, &artifacts[emitted_artifact_count..]);
-    }
 
     emit_project_progress(
         app,

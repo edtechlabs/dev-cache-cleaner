@@ -338,7 +338,7 @@ app.innerHTML = `
             <li>Matching is based on exact directory names such as <code>node_modules</code>, <code>.venv</code>, <code>target</code>, <code>.next</code>, <code>.terraform</code>, and Android <code>build</code>/<code>.cxx</code> folders.</li>
             <li>Some names require project markers: Rust <code>target</code> needs <code>Cargo.toml</code>; Maven/Gradle targets need their build files; Flutter <code>build</code> needs <code>pubspec.yaml</code>.</li>
             <li>Android leftovers require an Android manifest or a Gradle settings file with an <code>app</code> module. This prevents ordinary folders named <code>build</code> from being mislabeled.</li>
-            <li>Once an artifact directory matches, its contents are measured and traversal does not recurse inside it again.</li>
+            <li>Once an artifact directory matches, discovery does not recurse inside it again. Exact sizes are then measured concurrently by a bounded pool of up to four workers.</li>
           </ul>
         </article>
 
@@ -629,12 +629,19 @@ function hideScanProgress() {
 
 function updateScanProgress(payload) {
   if (payload.phase === 'scan' || payload.phase === 'scan-size' || payload.phase === 'scan-complete') {
+    const sizing = payload.phase === 'scan-size';
+    const total = payload.total || 0;
+    const percent = sizing && total ? Math.round((payload.current / total) * 100) : 0;
+    $('scanProgressBar').classList.toggle('indeterminate', payload.phase === 'scan');
+    $('scanProgressBar').style.width = sizing ? `${percent}%` : '';
     $('scanProgressText').textContent = payload.phase === 'scan-complete'
       ? `Search complete — ${payload.found} artifacts found`
-      : payload.phase === 'scan-size'
-        ? `Measuring artifact… ${payload.found} artifacts found`
+      : sizing
+        ? `Measuring artifacts in parallel… ${payload.found} ready`
         : `Searching… ${payload.found} artifacts found`;
-    $('scanProgressCount').textContent = `${payload.current} folders checked`;
+    $('scanProgressCount').textContent = sizing
+      ? `${payload.current} / ${total} artifacts measured`
+      : `${payload.current} folders checked`;
     $('scanProgressPath').textContent = payload.path || '';
     return;
   }
