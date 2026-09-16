@@ -243,6 +243,7 @@ app.innerHTML = `
         </div>
         <div class="hero-actions">
           <button id="scanBtn" class="primary">Scan</button>
+          <button id="stopScanBtn" class="danger" hidden>Stop scan</button>
           <button id="deleteArtifactsBtn" class="danger">Delete selected</button>
         </div>
       </section>
@@ -530,6 +531,7 @@ $('itemsBody').addEventListener('click', (e) => {
 // ── Project Scanner — wire-up ─────────────────────────────────────────────────
 
 $('scanBtn').addEventListener('click', runScan);
+$('stopScanBtn').addEventListener('click', stopScan);
 $('deleteArtifactsBtn').addEventListener('click', deleteArtifacts);
 $('chooseScanRoot').addEventListener('click', chooseScanRoot);
 $('saveSearchBtn').addEventListener('click', saveCurrentSearch);
@@ -878,6 +880,8 @@ async function runScan() {
   updateArtifactTypeOptions([]);
   renderArtifacts();
   $('scanBtn').disabled = true;
+  $('stopScanBtn').hidden = false;
+  $('stopScanBtn').disabled = false;
   showScanProgress('scan');
   setScanLog(`Scanning ${root} for project artifact directories…`);
   try {
@@ -913,12 +917,32 @@ async function runScan() {
           : `Loaded “${saved.name}”. Results reflect the latest scan.`;
       }
     }
-  } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
+  } catch (err) {
+    const message = String(err);
+    setScanLog(message.includes('stopped by user')
+      ? 'Scan stopped. Results found before stopping remain visible.'
+      : `Scan error:\n${message}`);
+  }
   finally {
     scanState.busy = false;
     scanState.acceptLiveBatches = false;
     $('scanBtn').disabled = false;
+    $('stopScanBtn').hidden = true;
     hideScanProgress();
+  }
+}
+
+async function stopScan() {
+  if (!scanState.busy) return;
+  const answer = await showPrompt('Stop the active project artifact scan?', 'STOP');
+  if (answer !== 'STOP') return;
+  $('stopScanBtn').disabled = true;
+  setScanLog('Stopping scan… finishing the current filesystem operation.');
+  try {
+    await invoke('cancel_project_scan');
+  } catch (err) {
+    $('stopScanBtn').disabled = false;
+    setScanLog(`Could not stop scan:\n${String(err)}`);
   }
 }
 

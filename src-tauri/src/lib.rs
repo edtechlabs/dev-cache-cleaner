@@ -7,9 +7,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
+
+static PROJECT_SCAN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -241,6 +244,7 @@ struct PathStats {
     file_count: u64,
     dir_count: u64,
     latest_modified: Option<SystemTime>,
+    cancelled: bool,
 }
 
 fn specs() -> Vec<TargetSpec> {
@@ -1414,6 +1418,14 @@ fn path_stats_with_progress<F>(path: &Path, mut on_progress: F) -> PathStats
 where
     F: FnMut(u64),
 {
+    path_stats_with_cancel(path, &mut on_progress, || false)
+}
+
+fn path_stats_with_cancel<F, C>(path: &Path, mut on_progress: F, mut is_cancelled: C) -> PathStats
+where
+    F: FnMut(u64),
+    C: FnMut() -> bool,
+{
     if !path.exists() {
         return PathStats::default();
     }
@@ -1442,6 +1454,10 @@ where
     }
 
     for entry in WalkDir::new(path).follow_links(false).into_iter() {
+        if is_cancelled() {
+            stats.cancelled = true;
+            break;
+        }
         let Ok(entry) = entry else { continue };
         let Ok(meta) = entry.metadata() else { continue };
 
@@ -1701,6 +1717,7 @@ async fn scan_projects(
     app: AppHandle,
     options: ProjectScanOptions,
 ) -> Result<ProjectScanReport, String> {
+    PROJECT_SCAN_CANCELLED.store(false, Ordering::Relaxed);
     tauri::async_runtime::spawn_blocking(move || scan_projects_impl(Some(&app), options))
         .await
         .map_err(|error| format!("Project scan worker failed: {error}"))?
@@ -1736,6 +1753,9 @@ fn scan_projects_impl(
     if let Some(saved_paths) = options.artifact_paths.as_ref() {
         let mut seen = HashSet::new();
         for raw_path in saved_paths {
+            if PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed) {
+                return Err("Project scan stopped by user".to_string());
+            }
             let path = PathBuf::from(normalize_path(raw_path));
             if !path.is_dir() || !seen.insert(path.clone()) { continue; }
             directories_scanned += 1;
@@ -1751,6 +1771,9 @@ fn scan_projects_impl(
             .into_iter();
 
         loop {
+            if PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed) {
+                return Err("Project scan stopped by user".to_string());
+            }
             let entry = match it.next() {
                 None          => break,
                 Some(Err(_))  => continue,
@@ -1789,6 +1812,9 @@ fn scan_projects_impl(
     }
 
     let candidate_count = candidates.len();
+    if PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed) {
+        return Err("Project scan stopped by user".to_string());
+    }
     emit_project_progress(
         app,
         ProjectProgress {
@@ -1825,7 +1851,7 @@ fn scan_projects_impl(
                         sender,
                         |sender, (index, mut artifact)| {
                             let progress_path = artifact.path.clone();
-                            let stats = path_stats_with_progress(
+                            let stats = path_stats_with_cancel(
                                 Path::new(&artifact.path),
                                 |files_scanned| {
                                     let _ = sender.send(ArtifactSizingEvent::Progress {
@@ -1833,7 +1859,11 @@ fn scan_projects_impl(
                                         files_scanned,
                                     });
                                 },
+                                || PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed),
                             );
+                            if stats.cancelled || PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed) {
+                                return;
+                            }
                             artifact.size_bytes = stats.size_bytes;
                             artifact.file_count = stats.file_count;
                             let artifact = (stats.size_bytes >= min_size).then_some(artifact);
@@ -1897,6 +1927,10 @@ fn scan_projects_impl(
         })?;
     }
 
+    if PROJECT_SCAN_CANCELLED.load(Ordering::Relaxed) {
+        return Err("Project scan stopped by user".to_string());
+    }
+
     if emitted_artifact_count < indexed_artifacts.len() {
         let batch: Vec<ProjectArtifact> = indexed_artifacts[emitted_artifact_count..]
             .iter()
@@ -1938,6 +1972,12 @@ fn scan_projects_impl(
         project_count,
         generated_at: chrono::Local::now().to_rfc3339(),
     })
+}
+
+#[tauri::command]
+fn cancel_project_scan() -> Result<(), String> {
+    PROJECT_SCAN_CANCELLED.store(true, Ordering::Relaxed);
+    Ok(())
 }
 
 fn project_artifact_candidate(path: &Path, rules: Option<&[ArtifactRule]>) -> Option<ProjectArtifact> {
@@ -2089,7 +2129,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, delete_artifacts, memory_usage])
+        .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, cancel_project_scan, delete_artifacts, memory_usage])
         .run(tauri::generate_context!())
         .expect("error while running macOS Dev Cache Cleaner");
 }
