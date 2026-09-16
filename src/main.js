@@ -601,18 +601,22 @@ function hideScanProgress() {
 }
 
 function updateScanProgress(payload) {
-  if (payload.phase === 'scan' || payload.phase === 'scan-complete') {
+  if (payload.phase === 'scan' || payload.phase === 'scan-size' || payload.phase === 'scan-complete') {
     $('scanProgressText').textContent = payload.phase === 'scan-complete'
       ? `Search complete — ${payload.found} artifacts found`
-      : `Searching… ${payload.found} artifacts found`;
+      : payload.phase === 'scan-size'
+        ? `Measuring artifact… ${payload.found} artifacts found`
+        : `Searching… ${payload.found} artifacts found`;
     $('scanProgressCount').textContent = `${payload.current} folders checked`;
     $('scanProgressPath').textContent = payload.path || '';
     return;
   }
-  if (payload.phase === 'delete') {
+  if (payload.phase === 'delete' || payload.phase === 'delete-size') {
     const total = payload.total || 0;
     const percent = total ? Math.round((payload.current / total) * 100) : 0;
-    $('scanProgressText').textContent = 'Deleting selected artifacts…';
+    $('scanProgressText').textContent = payload.phase === 'delete-size'
+      ? 'Measuring artifact before deletion…'
+      : 'Deleting selected artifacts…';
     $('scanProgressCount').textContent = `${payload.current} / ${total}`;
     $('scanProgressBar').style.width = `${percent}%`;
     $('scanProgressPath').textContent = payload.path || '';

@@ -1354,6 +1354,13 @@ fn has_glob_chars(s: &str) -> bool {
 }
 
 fn path_stats(path: &Path) -> PathStats {
+    path_stats_with_progress(path, |_| {})
+}
+
+fn path_stats_with_progress<F>(path: &Path, mut on_progress: F) -> PathStats
+where
+    F: FnMut(u64),
+{
     if !path.exists() {
         return PathStats::default();
     }
@@ -1388,6 +1395,9 @@ fn path_stats(path: &Path) -> PathStats {
         if meta.is_file() {
             stats.file_count += 1;
             stats.size_bytes = stats.size_bytes.saturating_add(meta.len());
+            if stats.file_count % 1000 == 0 {
+                on_progress(stats.file_count);
+            }
         } else if meta.is_dir() {
             stats.dir_count += 1;
         }
@@ -1585,8 +1595,13 @@ fn is_android_project_path(path: &Path) -> bool {
 }
 
 #[tauri::command]
-fn scan_projects(app: AppHandle, options: ProjectScanOptions) -> Result<ProjectScanReport, String> {
-    scan_projects_impl(Some(&app), options)
+async fn scan_projects(
+    app: AppHandle,
+    options: ProjectScanOptions,
+) -> Result<ProjectScanReport, String> {
+    tauri::async_runtime::spawn_blocking(move || scan_projects_impl(Some(&app), options))
+        .await
+        .map_err(|error| format!("Project scan worker failed: {error}"))?
 }
 
 fn scan_projects_impl(
@@ -1639,7 +1654,22 @@ fn scan_projects_impl(
         }
 
         if let Some(kind) = detect_artifact_kind(&name, entry.path()) {
-            let stats = path_stats(entry.path());
+            let artifact_path = entry.path().display().to_string();
+            let stats = path_stats_with_progress(entry.path(), |files_scanned| {
+                let found = artifacts.len() as u64;
+                let bytes = artifacts.iter().map(|artifact| artifact.size_bytes).sum();
+                emit_project_progress(
+                    app,
+                    ProjectProgress {
+                        phase: "scan-size",
+                        current: directories_scanned,
+                        total: None,
+                        path: format!("{} ({} files measured)", artifact_path, files_scanned),
+                        found,
+                        bytes,
+                    },
+                );
+            });
             if stats.size_bytes >= min_size {
                 let parent = entry.path().parent().unwrap_or(entry.path());
                 let modified_secs = entry.metadata()
@@ -1712,8 +1742,10 @@ fn scan_projects_impl(
 }
 
 #[tauri::command]
-fn delete_artifacts(app: AppHandle, request: DeleteArtifactsRequest) -> Result<u64, String> {
-    delete_artifacts_impl(Some(&app), request)
+async fn delete_artifacts(app: AppHandle, request: DeleteArtifactsRequest) -> Result<u64, String> {
+    tauri::async_runtime::spawn_blocking(move || delete_artifacts_impl(Some(&app), request))
+        .await
+        .map_err(|error| format!("Artifact deletion worker failed: {error}"))?
 }
 
 fn delete_artifacts_impl(
@@ -1753,7 +1785,21 @@ fn delete_artifacts_impl(
             continue;
         }
 
-        let size = path_stats(&p).size_bytes;
+        let path_for_progress = path_str.clone();
+        let size = path_stats_with_progress(&p, |files_scanned| {
+            emit_project_progress(
+                app,
+                ProjectProgress {
+                    phase: "delete-size",
+                    current: index as u64,
+                    total: Some(total),
+                    path: format!("{} ({} files measured)", path_for_progress, files_scanned),
+                    found: errors.len() as u64,
+                    bytes: freed,
+                },
+            );
+        })
+        .size_bytes;
 
         let result = if request.permanent {
             fs::remove_dir_all(&p).map_err(|e| e.to_string())
