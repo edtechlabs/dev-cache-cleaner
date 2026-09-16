@@ -369,6 +369,13 @@ $('artifactsBody').addEventListener('change', (e) => {
   else scanState.selected.delete(e.target.value);
   updateScanStats();
 });
+$('artifactsBody').addEventListener('click', (e) => {
+  const folder = e.target.closest('.artifact-folder');
+  if (!folder) return;
+  const checkbox = folder.closest('tr').querySelector('input[type="checkbox"]');
+  checkbox.checked = !checkbox.checked;
+  checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 // ── Cache Cleaner — actions ───────────────────────────────────────────────────
 
@@ -563,7 +570,7 @@ function renderArtifacts() {
 
 function renderArtifactRow(artifact) {
   const checked = scanState.selected.has(artifact.path) ? 'checked' : '';
-  const shortPath = artifact.path.replace(artifact.projectPath, '').replace(/^\//, '');
+  const relativePath = relativeArtifactPath(artifact.path, scanState.report.root);
   const modDate = artifact.modifiedSecs
     ? new Date(artifact.modifiedSecs * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
     : '—';
@@ -572,15 +579,22 @@ function renderArtifactRow(artifact) {
   return `
     <tr>
       <td class="col-sel"><input type="checkbox" value="${escapeHtml(artifact.path)}" ${checked} /></td>
-      <td>
+      <td class="artifact-folder" title="Click to ${checked ? 'deselect' : 'select'} this folder">
         <strong>${escapeHtml(artifact.projectName)}</strong>
-        <div class="note" title="${escapeHtml(artifact.path)}">${escapeHtml(artifact.projectPath)}<span style="color:#60a5fa">/${shortPath}</span></div>
+        <div class="note" title="${escapeHtml(artifact.path)}"><span style="color:#60a5fa">${escapeHtml(relativePath)}</span></div>
       </td>
       <td class="col-kind"><span class="kind-chip">${escapeHtml(artifact.artifactKind)}</span></td>
       <td class="col-size">${formatBytes(artifact.sizeBytes)}</td>
       <td class="col-modified">${modDate}</td>
       <td class="col-age"><span class="age-chip ${cls}">${ageStr}</span></td>
     </tr>`;
+}
+
+function relativeArtifactPath(path, root) {
+  const normalizedRoot = root.replace(/[\\/]+$/, '');
+  if (path === normalizedRoot) return '.';
+  const prefix = `${normalizedRoot}/`;
+  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
 function updateScanStats() {

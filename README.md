@@ -27,6 +27,8 @@ oldest-first views as appropriate. The sort dropdown remains available for
 the same fields.
 The scanner also shows the combined disk space for the currently selected
 artifacts and updates it as selections change.
+Artifact paths in the results are shown relative to the selected scan root;
+click a project/folder entry to toggle its checkbox.
 
 The standalone `cache-cleaner` CLI supports scanning and listing targets,
 JSON output, dry runs, selective or category-based cleanup, permanent-delete
