@@ -12,7 +12,8 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.5.0"
+    "@tauri-apps/api": "^2.5.0",
+    "@tauri-apps/plugin-dialog": "^2.7.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.5.0",

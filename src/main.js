@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 import './styles.css';
 
 const app = document.querySelector('#app');
@@ -177,6 +178,7 @@ app.innerHTML = `
           <label class="cfg-label">Root directory to scan
             <div class="dir-row">
               <input id="scanRoot" type="text" value="~/Code" placeholder="~/Code or ~/Projects" />
+              <button id="chooseScanRoot" type="button">Choose folder…</button>
             </div>
           </label>
           <label class="cfg-label">Artifact type
@@ -344,6 +346,7 @@ $('itemsBody').addEventListener('click', (e) => {
 
 $('scanBtn').addEventListener('click', runScan);
 $('deleteArtifactsBtn').addEventListener('click', deleteArtifacts);
+$('chooseScanRoot').addEventListener('click', chooseScanRoot);
 $('artifactTypeFilter').addEventListener('change', (e) => { scanState.typeFilter = e.target.value; renderArtifacts(); });
 $('artifactMinSize').addEventListener('change', (e) => { scanState.minSize = +e.target.value; renderArtifacts(); });
 $('artifactStaleFilter').addEventListener('change', (e) => { scanState.staleDays = +e.target.value; renderArtifacts(); });
@@ -411,6 +414,22 @@ async function cleanSelected() {
 }
 
 // ── Project Scanner — actions ─────────────────────────────────────────────────
+
+async function chooseScanRoot() {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Choose a project root to scan',
+    });
+    if (typeof selected === 'string') {
+      $('scanRoot').value = selected;
+      $('scanRoot').focus();
+    }
+  } catch (err) {
+    setScanLog(`Folder picker error:\n${String(err)}`);
+  }
+}
 
 async function runScan() {
   const root = $('scanRoot').value.trim() || '~';

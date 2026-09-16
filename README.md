@@ -19,6 +19,9 @@ The GUI currently provides two tabs:
   and `.kotlin` leftovers. Selected artifacts can be moved to Trash or
   permanently deleted.
 
+Use **Choose folder…** beside the scanner root field to select a directory
+with the native macOS folder picker, or enter a path manually.
+
 The standalone `cache-cleaner` CLI supports scanning and listing targets,
 JSON output, dry runs, selective or category-based cleanup, permanent-delete
 and command opt-ins, and a macOS LaunchAgent service for scheduled cleanup.

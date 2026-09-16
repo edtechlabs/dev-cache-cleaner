@@ -205,6 +205,7 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
 .cfg-label { display: grid; gap: 7px; color: #cbd5e1; font-size: 13px; }
 .dir-row { display: flex; gap: 8px; }
 .dir-row input { flex: 1; }
+.dir-row button { white-space: nowrap; }
 
 /* Artifact table columns */
 .col-kind { width: 150px; }
