@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::SystemTime;
+use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -149,6 +150,23 @@ pub struct ProjectScanReport {
 pub struct DeleteArtifactsRequest {
     pub paths: Vec<String>,
     pub permanent: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectProgress {
+    phase: &'static str,
+    current: u64,
+    total: Option<u64>,
+    path: String,
+    found: u64,
+    bytes: u64,
+}
+
+fn emit_project_progress(app: Option<&AppHandle>, progress: ProjectProgress) {
+    if let Some(app) = app {
+        let _ = app.emit("project-progress", progress);
+    }
 }
 
 // ── Tree viewer type ──────────────────────────────────────────────────────────
@@ -1567,7 +1585,14 @@ fn is_android_project_path(path: &Path) -> bool {
 }
 
 #[tauri::command]
-fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, String> {
+fn scan_projects(app: AppHandle, options: ProjectScanOptions) -> Result<ProjectScanReport, String> {
+    scan_projects_impl(Some(&app), options)
+}
+
+fn scan_projects_impl(
+    app: Option<&AppHandle>,
+    options: ProjectScanOptions,
+) -> Result<ProjectScanReport, String> {
     let root = PathBuf::from(normalize_path(&options.root));
     if !root.exists() {
         return Err(format!("Root directory not found: {}", root.display()));
@@ -1576,6 +1601,19 @@ fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, Strin
     let max_depth = options.max_depth.unwrap_or(8);
     let min_size  = options.min_size_bytes.unwrap_or(0);
     let mut artifacts: Vec<ProjectArtifact> = Vec::new();
+    let mut directories_scanned = 0u64;
+
+    emit_project_progress(
+        app,
+        ProjectProgress {
+            phase: "scan",
+            current: 0,
+            total: None,
+            path: root.display().to_string(),
+            found: 0,
+            bytes: 0,
+        },
+    );
 
     let mut it = WalkDir::new(&root)
         .min_depth(1)
@@ -1590,6 +1628,8 @@ fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, Strin
             Some(Ok(e))   => e,
         };
         if !entry.file_type().is_dir() { continue; }
+
+        directories_scanned += 1;
 
         let name = entry.file_name().to_string_lossy();
 
@@ -1624,6 +1664,22 @@ fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, Strin
             }
             it.skip_current_dir(); // never recurse inside artifact dirs
         }
+
+        if directories_scanned % 25 == 0 {
+            let found = artifacts.len() as u64;
+            let bytes = artifacts.iter().map(|artifact| artifact.size_bytes).sum();
+            emit_project_progress(
+                app,
+                ProjectProgress {
+                    phase: "scan",
+                    current: directories_scanned,
+                    total: None,
+                    path: entry.path().display().to_string(),
+                    found,
+                    bytes,
+                },
+            );
+        }
     }
 
     let total_bytes     = artifacts.iter().map(|a| a.size_bytes).sum();
@@ -1632,6 +1688,18 @@ fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, Strin
         .map(|a| a.project_path.as_str())
         .collect::<HashSet<_>>()
         .len() as u64;
+
+    emit_project_progress(
+        app,
+        ProjectProgress {
+            phase: "scan-complete",
+            current: directories_scanned,
+            total: Some(directories_scanned),
+            path: root.display().to_string(),
+            found: artifact_count,
+            bytes: total_bytes,
+        },
+    );
 
     Ok(ProjectScanReport {
         root: root.display().to_string(),
@@ -1644,13 +1712,46 @@ fn scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, Strin
 }
 
 #[tauri::command]
-fn delete_artifacts(request: DeleteArtifactsRequest) -> Result<u64, String> {
+fn delete_artifacts(app: AppHandle, request: DeleteArtifactsRequest) -> Result<u64, String> {
+    delete_artifacts_impl(Some(&app), request)
+}
+
+fn delete_artifacts_impl(
+    app: Option<&AppHandle>,
+    request: DeleteArtifactsRequest,
+) -> Result<u64, String> {
     let mut freed: u64 = 0;
     let mut errors: Vec<String> = Vec::new();
+    let total = request.paths.len() as u64;
 
-    for path_str in &request.paths {
+    emit_project_progress(
+        app,
+        ProjectProgress {
+            phase: "delete",
+            current: 0,
+            total: Some(total),
+            path: String::new(),
+            found: 0,
+            bytes: 0,
+        },
+    );
+
+    for (index, path_str) in request.paths.iter().enumerate() {
         let p = PathBuf::from(path_str);
-        if !p.exists() { continue; }
+        if !p.exists() {
+            emit_project_progress(
+                app,
+                ProjectProgress {
+                    phase: "delete",
+                    current: (index + 1) as u64,
+                    total: Some(total),
+                    path: path_str.clone(),
+                    found: 0,
+                    bytes: freed,
+                },
+            );
+            continue;
+        }
 
         let size = path_stats(&p).size_bytes;
 
@@ -1664,6 +1765,18 @@ fn delete_artifacts(request: DeleteArtifactsRequest) -> Result<u64, String> {
             Ok(_)    => freed += size,
             Err(e)   => errors.push(format!("{}: {}", path_str, e)),
         }
+
+        emit_project_progress(
+            app,
+            ProjectProgress {
+                phase: "delete",
+                current: (index + 1) as u64,
+                total: Some(total),
+                path: path_str.clone(),
+                found: errors.len() as u64,
+                bytes: freed,
+            },
+        );
     }
 
     if !errors.is_empty() {
@@ -1691,7 +1804,7 @@ pub fn run_list_path(path: String) -> Result<Vec<TreeNode>, String> {
 }
 
 pub fn run_scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, String> {
-    scan_projects(options)
+    scan_projects_impl(None, options)
 }
 
 // ── Tauri entry point ─────────────────────────────────────────────────────────

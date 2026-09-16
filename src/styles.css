@@ -110,6 +110,13 @@ pre {
   font-size: 12px;
   margin: 0;
 }
+.scan-progress { margin: 0 0 10px; color: #cbd5e1; font-size: 12px; }
+.scan-progress-label { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.scan-progress-track { height: 6px; overflow: hidden; border-radius: 999px; background: rgba(255,255,255,.1); }
+.scan-progress-track > div { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #2563eb, #60a5fa); transition: width .15s ease; }
+.scan-progress-track > div.indeterminate { width: 35%; animation: scan-progress 1.2s ease-in-out infinite; }
+.scan-progress-path { margin-top: 6px; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes scan-progress { from { transform: translateX(-120%); } to { transform: translateX(300%); } }
 
 /* ── Main grid: table + tree ── */
 .main-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }

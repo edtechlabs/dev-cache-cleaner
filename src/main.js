@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import './styles.css';
 
@@ -238,6 +239,11 @@ app.innerHTML = `
 
       <section class="log-card card">
         <div class="log-header"><h2>Scanner log</h2></div>
+        <div id="scanProgress" class="scan-progress" hidden>
+          <div class="scan-progress-label"><span id="scanProgressText"></span><span id="scanProgressCount"></span></div>
+          <div class="scan-progress-track"><div id="scanProgressBar"></div></div>
+          <div id="scanProgressPath" class="scan-progress-path"></div>
+        </div>
         <pre id="scanLogBox">No scan yet.</pre>
       </section>
 
@@ -449,6 +455,7 @@ async function runScan() {
   const root = $('scanRoot').value.trim() || '~';
   scanState.busy = true;
   $('scanBtn').disabled = true;
+  showScanProgress('scan');
   setScanLog(`Scanning ${root} for project artifact directories…`);
   try {
     const report = await invoke('scan_projects', {
@@ -468,7 +475,7 @@ async function runScan() {
     );
     renderArtifacts();
   } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
-  finally { scanState.busy = false; $('scanBtn').disabled = false; }
+  finally { scanState.busy = false; $('scanBtn').disabled = false; hideScanProgress(); }
 }
 
 async function deleteArtifacts() {
@@ -485,6 +492,7 @@ async function deleteArtifacts() {
 
   $('deleteArtifactsBtn').disabled = true;
   const paths = Array.from(scanState.selected);
+  showScanProgress('delete', paths.length);
   setScanLog(`Deleting ${paths.length} artifact directories…`);
   try {
     const freed = await invoke('delete_artifacts', { request: { paths, permanent } });
@@ -492,7 +500,42 @@ async function deleteArtifacts() {
     scanState.selected.clear();
     await runScan();
   } catch (err) { setScanLog(`Delete error:\n${String(err)}`); }
-  finally { $('deleteArtifactsBtn').disabled = false; }
+  finally { $('deleteArtifactsBtn').disabled = false; hideScanProgress(); }
+}
+
+function showScanProgress(phase, total = 0) {
+  const progress = $('scanProgress');
+  const bar = $('scanProgressBar');
+  progress.hidden = false;
+  progress.dataset.phase = phase;
+  bar.classList.toggle('indeterminate', phase === 'scan');
+  bar.style.width = phase === 'scan' ? '' : '0%';
+  $('scanProgressText').textContent = phase === 'scan' ? 'Searching project folders…' : 'Preparing deletion…';
+  $('scanProgressCount').textContent = phase === 'scan' ? '' : `0 / ${total}`;
+  $('scanProgressPath').textContent = '';
+}
+
+function hideScanProgress() {
+  $('scanProgress').hidden = true;
+}
+
+function updateScanProgress(payload) {
+  if (payload.phase === 'scan' || payload.phase === 'scan-complete') {
+    $('scanProgressText').textContent = payload.phase === 'scan-complete'
+      ? `Search complete — ${payload.found} artifacts found`
+      : `Searching… ${payload.found} artifacts found`;
+    $('scanProgressCount').textContent = `${payload.current} folders checked`;
+    $('scanProgressPath').textContent = payload.path || '';
+    return;
+  }
+  if (payload.phase === 'delete') {
+    const total = payload.total || 0;
+    const percent = total ? Math.round((payload.current / total) * 100) : 0;
+    $('scanProgressText').textContent = 'Deleting selected artifacts…';
+    $('scanProgressCount').textContent = `${payload.current} / ${total}`;
+    $('scanProgressBar').style.width = `${percent}%`;
+    $('scanProgressPath').textContent = payload.path || '';
+  }
 }
 
 // ── Project Scanner — render ──────────────────────────────────────────────────
@@ -852,3 +895,4 @@ function setLog(text) { $('logBox').textContent = text; }
 render();
 updateScanStats();
 updateArtifactSortIndicators();
+listen('project-progress', (event) => updateScanProgress(event.payload));
