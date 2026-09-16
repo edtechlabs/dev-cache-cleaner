@@ -38,6 +38,10 @@ and command opt-ins, and a macOS LaunchAgent service for scheduled cleanup.
 File cleanup uses Trash by default and requires explicit confirmation unless
 the CLI `--yes` option is supplied.
 
+The GUI’s **How searches work** tab explains the fixed system paths, glob
+patterns, project traversal rules, Android markers, filters, and cleanup
+parameters used by the two scanners.
+
 ---
 
 ## Contents

@@ -59,6 +59,21 @@ button.icon-btn:hover { opacity: 1; }
   backdrop-filter: blur(16px);
   border-radius: 22px;
 }
+.info-page .hero { margin-bottom: 14px; }
+.info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.info-card { padding: 20px; }
+.info-card h2 { margin-bottom: 10px; font-size: 18px; }
+.info-card h3 { margin: 18px 0 8px; font-size: 13px; color: #dbeafe; }
+.info-card p, .info-card li { color: #cbd5e1; font-size: 13px; line-height: 1.55; }
+.info-card p { margin: 0 0 10px; }
+.info-card ul { margin: 8px 0 0; padding-left: 20px; }
+.info-card li + li { margin-top: 7px; }
+.info-card code { display: inline; color: #a7f3d0; word-break: normal; }
+.rule-table { display: grid; gap: 8px; }
+.rule-table > div { display: grid; grid-template-columns: 120px 1fr; gap: 10px; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.07); }
+.rule-table strong { color: #e2e8f0; font-size: 12px; }
+.rule-table span { color: #cbd5e1; font-size: 12px; line-height: 1.45; }
+.info-note { margin-top: 16px !important; color: #94a3b8 !important; }
 
 /* ── Hero ── */
 .hero { display: flex; align-items: center; justify-content: space-between; padding: 26px 28px; gap: 24px; }
@@ -297,4 +312,5 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
   .stats { grid-template-columns: repeat(2, 1fr); }
   .main-grid { grid-template-columns: 1fr; }
   .tree-card { position: static; }
+  .info-grid { grid-template-columns: 1fr; }
 }

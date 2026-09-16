@@ -61,6 +61,7 @@ app.innerHTML = `
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="cache">System Cache Cleaner</button>
     <button class="tab-btn" data-tab="projects">Project Artifact Scanner</button>
+    <button class="tab-btn" data-tab="info">How searches work</button>
   </div>
 
   <!-- ═══ Tab 1: Cache Cleaner ═══ -->
@@ -272,6 +273,85 @@ app.innerHTML = `
       </section>
     </main>
   </div>
+
+  <!-- ═══ Tab 3: Search explanation ═══ -->
+  <div id="pageSearchInfo" class="tab-page">
+    <main class="shell info-page">
+      <section class="hero card">
+        <div>
+          <p class="eyebrow">transparent discovery rules</p>
+          <h1>How searches work</h1>
+          <p class="subline">This screen describes the exact matching rules and filters used by both cleanup tools. The app does not accept or execute user-provided regular expressions.</p>
+        </div>
+      </section>
+
+      <section class="info-grid">
+        <article class="card info-card">
+          <h2>System Cache Cleaner</h2>
+          <p>System discovery iterates over a fixed list of target specifications in the Rust backend. Each target is either a path target or a command target.</p>
+          <h3>Path targets</h3>
+          <ul>
+            <li>Paths are literal locations unless they contain <code>*</code>, <code>?</code>, or bracket expressions such as <code>[0-9]</code>.</li>
+            <li><code>~</code> is expanded to the current user’s home directory.</li>
+            <li><code>$BREW_CACHE</code> is resolved by running <code>brew --cache</code>; the Homebrew fallback path is also checked.</li>
+            <li>Rust’s <code>glob</code> matcher expands wildcard paths such as <code>~/Library/Caches/JetBrains/*/tmp</code> and deduplicates matches.</li>
+            <li>Missing paths are omitted from normal discovery. The item’s size is calculated recursively with symlinks not followed.</li>
+          </ul>
+          <h3>Command targets</h3>
+          <ul>
+            <li>Commands use fixed executables and fixed argument arrays through <code>std::process::Command</code>; there is no shell interpolation.</li>
+            <li>Homebrew, Docker, pnpm, Go, and similar commands are probed only when the executable exists in <code>PATH</code>.</li>
+            <li>Command cleanup is disabled until <strong>Allow commands</strong> is enabled.</li>
+          </ul>
+        </article>
+
+        <article class="card info-card">
+          <h2>System target paths</h2>
+          <p>The current fixed target list searches these locations and command-backed caches:</p>
+          <div class="rule-table">
+            <div><strong>Homebrew</strong><span><code>$BREW_CACHE</code>, <code>~/Library/Caches/Homebrew</code>, <code>brew cleanup -s</code></span></div>
+            <div><strong>JetBrains</strong><span><code>~/Library/Logs/JetBrains</code>, <code>~/Library/Caches/JetBrains/*/tmp</code>, <code>jcef_cache</code>, <code>index</code>, <code>caches</code>, <code>plugins</code>, <code>~/java_error_in_*.hprof</code>, JVM crash logs</span></div>
+            <div><strong>Apple dev</strong><span>Xcode <code>DerivedData</code>, SwiftPM caches, Instruments, Simulator logs</span></div>
+            <div><strong>AI / LLM</strong><span>Ollama logs/models, Hugging Face, Torch, MLX, LM Studio, ComfyUI</span></div>
+            <div><strong>Python</strong><span>pip, uv, Poetry, Conda/Mamba package caches</span></div>
+            <div><strong>Node / JS</strong><span>npm, Yarn, pnpm stores and <code>pnpm store prune</code></span></div>
+            <div><strong>Rust</strong><span>Cargo registry cache, Git database, and checkouts</span></div>
+            <div><strong>Java / Android</strong><span>Gradle build/module caches, wrapper distributions, Maven repository, Android Studio caches</span></div>
+            <div><strong>Docker</strong><span>Desktop logs, builder prune, system prune</span></div>
+            <div><strong>Go / Ruby / Dart / PHP</strong><span>Tool caches, module/gem caches, Dart/Flutter, Bundler and Composer caches</span></div>
+            <div><strong>Cloud / DevOps</strong><span>Terraform plugins, Pulumi, AWS CDK, Helm</span></div>
+            <div><strong>macOS</strong><span>User URLSession downloads and unified log archive</span></div>
+          </div>
+        </article>
+
+        <article class="card info-card">
+          <h2>Project Artifact Scanner</h2>
+          <p>The selected root is normalized, then the backend walks its directory tree with <code>WalkDir</code>.</p>
+          <ul>
+            <li>Traversal starts one level below the root, has a maximum depth of <strong>8</strong>, and does not follow symbolic links.</li>
+            <li>Source-control, operating-system, and system directories are skipped: <code>.git</code>, <code>.svn</code>, <code>.hg</code>, <code>Library</code>, <code>System</code>, <code>Applications</code>, <code>Volumes</code>, <code>private</code>, <code>usr</code>, <code>bin</code>, <code>var</code>, <code>tmp</code>, and related macOS metadata folders.</li>
+            <li>Matching is based on exact directory names such as <code>node_modules</code>, <code>.venv</code>, <code>target</code>, <code>.next</code>, <code>.terraform</code>, and Android <code>build</code>/<code>.cxx</code> folders.</li>
+            <li>Some names require project markers: Rust <code>target</code> needs <code>Cargo.toml</code>; Maven/Gradle targets need their build files; Flutter <code>build</code> needs <code>pubspec.yaml</code>.</li>
+            <li>Android leftovers require an Android manifest or a Gradle settings file with an <code>app</code> module. This prevents ordinary folders named <code>build</code> from being mislabeled.</li>
+            <li>Once an artifact directory matches, its contents are measured and traversal does not recurse inside it again.</li>
+          </ul>
+        </article>
+
+        <article class="card info-card">
+          <h2>Project filters and cleanup</h2>
+          <ul>
+            <li><strong>Artifact type</strong> is an exact match against the detected label.</li>
+            <li><strong>Min size</strong> keeps artifacts at or above 0, 1 MB, 10 MB, 100 MB, or 1 GB.</li>
+            <li><strong>Stale</strong> compares last-modified time against 30, 90, 180, or 365 days.</li>
+            <li><strong>Search</strong> is not used by the project scanner; its type, size, and age controls filter the completed result set in the frontend.</li>
+            <li>Sorting by project, type, size, last modified, or age is performed locally after filtering.</li>
+            <li>Selected artifacts are the exact returned paths. Cleanup moves them to Trash by default or permanently deletes them only when that mode is selected and confirmed.</li>
+          </ul>
+          <p class="info-note">Every size includes files below the matched directory. Permission errors may make a directory appear smaller or unavailable; the scan log reports the result.</p>
+        </article>
+      </section>
+    </main>
+  </div>
 `;
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -316,6 +396,7 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
     document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
     $('pageCacheCleaner').classList.toggle('active', tab === 'cache');
     $('pageProjectScanner').classList.toggle('active', tab === 'projects');
+    $('pageSearchInfo').classList.toggle('active', tab === 'info');
   });
 });
 
