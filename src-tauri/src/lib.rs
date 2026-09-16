@@ -134,6 +134,7 @@ pub struct ProjectScanOptions {
     pub root: String,
     pub min_size_bytes: Option<u64>,
     pub max_depth: Option<usize>,
+    pub artifact_paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1683,65 +1684,58 @@ fn scan_projects_impl(
         },
     );
 
-    let mut it = WalkDir::new(&root)
-        .min_depth(1)
-        .max_depth(max_depth)
-        .follow_links(false)
-        .into_iter();
-
-    loop {
-        let entry = match it.next() {
-            None          => break,
-            Some(Err(_))  => continue,
-            Some(Ok(e))   => e,
-        };
-        if !entry.file_type().is_dir() { continue; }
-
-        directories_scanned += 1;
-
-        let name = entry.file_name().to_string_lossy();
-
-        if artifact_scan_skip(&name) {
-            it.skip_current_dir();
-            continue;
+    if let Some(saved_paths) = options.artifact_paths.as_ref() {
+        let mut seen = HashSet::new();
+        for raw_path in saved_paths {
+            let path = PathBuf::from(normalize_path(raw_path));
+            if !path.is_dir() || !seen.insert(path.clone()) { continue; }
+            directories_scanned += 1;
+            if let Some(candidate) = project_artifact_candidate(&path) {
+                candidates.push(candidate);
+            }
         }
+    } else {
+        let mut it = WalkDir::new(&root)
+            .min_depth(1)
+            .max_depth(max_depth)
+            .follow_links(false)
+            .into_iter();
 
-        if let Some(kind) = detect_artifact_kind(&name, entry.path()) {
-            let parent = entry.path().parent().unwrap_or(entry.path());
-            let modified_secs = entry.metadata()
-                .ok()
-                .and_then(|m| m.modified().ok())
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|d| d.as_secs() as i64)
-                .unwrap_or(0);
+        loop {
+            let entry = match it.next() {
+                None          => break,
+                Some(Err(_))  => continue,
+                Some(Ok(e))   => e,
+            };
+            if !entry.file_type().is_dir() { continue; }
 
-            candidates.push(ProjectArtifact {
-                path: entry.path().display().to_string(),
-                dir_name: name.to_string(),
-                artifact_kind: kind.to_string(),
-                project_name: parent.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                project_path: parent.display().to_string(),
-                size_bytes: 0,
-                file_count: 0,
-                modified_secs,
-            });
-            it.skip_current_dir(); // never recurse inside artifact dirs
-        }
+            directories_scanned += 1;
 
-        if directories_scanned % 25 == 0 {
-            emit_project_progress(
-                app,
-                ProjectProgress {
-                    phase: "scan",
-                    current: directories_scanned,
-                    total: None,
-                    path: entry.path().display().to_string(),
-                    found: candidates.len() as u64,
-                    bytes: 0,
-                },
-            );
+            let name = entry.file_name().to_string_lossy();
+
+            if artifact_scan_skip(&name) {
+                it.skip_current_dir();
+                continue;
+            }
+
+            if let Some(candidate) = project_artifact_candidate(entry.path()) {
+                candidates.push(candidate);
+                it.skip_current_dir(); // never recurse inside artifact dirs
+            }
+
+            if directories_scanned % 25 == 0 {
+                emit_project_progress(
+                    app,
+                    ProjectProgress {
+                        phase: "scan",
+                        current: directories_scanned,
+                        total: None,
+                        path: entry.path().display().to_string(),
+                        found: candidates.len() as u64,
+                        bytes: 0,
+                    },
+                );
+            }
         }
     }
 
@@ -1894,6 +1888,32 @@ fn scan_projects_impl(
         artifact_count,
         project_count,
         generated_at: chrono::Local::now().to_rfc3339(),
+    })
+}
+
+fn project_artifact_candidate(path: &Path) -> Option<ProjectArtifact> {
+    if !path.is_dir() { return None; }
+    let name = path.file_name()?.to_string_lossy();
+    let kind = detect_artifact_kind(&name, path)?;
+    let parent = path.parent().unwrap_or(path);
+    let modified_secs = fs::symlink_metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+
+    Some(ProjectArtifact {
+        path: path.display().to_string(),
+        dir_name: name.to_string(),
+        artifact_kind: kind.to_string(),
+        project_name: parent.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        project_path: parent.display().to_string(),
+        size_bytes: 0,
+        file_count: 0,
+        modified_secs,
     })
 }
 

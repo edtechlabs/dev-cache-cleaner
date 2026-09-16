@@ -392,6 +392,7 @@ app.innerHTML = `
             <li>Some names require project markers: Rust <code>target</code> needs <code>Cargo.toml</code>; Maven/Gradle targets need their build files; Flutter <code>build</code> needs <code>pubspec.yaml</code>.</li>
             <li>Android leftovers require an Android manifest or a Gradle settings file with an <code>app</code> module. This prevents ordinary folders named <code>build</code> from being mislabeled.</li>
             <li>Once an artifact directory matches, discovery does not recurse inside it again. Exact sizes are then measured concurrently by a bounded pool of up to four workers.</li>
+            <li>A loaded saved search refreshes its saved artifact paths directly, so it does not walk the entire root again. New scans without saved results still inspect the complete selected root.</li>
           </ul>
         </article>
 
@@ -695,7 +696,7 @@ async function loadSavedSearch() {
     };
     scanState.selected.clear();
     renderArtifacts();
-    $('savedSearchStatus').textContent = `Loaded “${search.name}”. Showing saved results; click Scan to refresh.`;
+    $('savedSearchStatus').textContent = `Loaded “${search.name}”. Showing saved results; Scan refreshes these directories only.`;
     setScanLog(`Loaded saved results for “${search.name}”.`);
     return;
   }
@@ -716,6 +717,8 @@ async function deleteSavedSearch() {
 
 async function runScan() {
   const root = $('scanRoot').value.trim() || '~';
+  const activeSavedSearch = scanState.savedSearches.find((search) => search.id === scanState.activeSavedSearchId);
+  const savedArtifactPaths = activeSavedSearch?.results?.artifacts?.map((artifact) => artifact.path);
   scanState.busy = true;
   scanState.acceptLiveBatches = true;
   scanState.selected.clear();
@@ -733,13 +736,13 @@ async function runScan() {
   showScanProgress('scan');
   setScanLog(`Scanning ${root} for project artifact directories…`);
   try {
-    const report = await invoke('scan_projects', {
-      options: {
-        root,
-        minSizeBytes: 0,   // filtering done in JS
-        maxDepth: 8,
-      },
-    });
+    const options = {
+      root,
+      minSizeBytes: 0,   // filtering done in JS
+      maxDepth: 8,
+    };
+    if (savedArtifactPaths) options.artifactPaths = savedArtifactPaths;
+    const report = await invoke('scan_projects', { options });
     if (scanState.liveRenderTimer) {
       clearTimeout(scanState.liveRenderTimer);
       scanState.liveRenderTimer = null;
@@ -757,7 +760,11 @@ async function runScan() {
     renderArtifacts();
     if (scanState.activeSavedSearchId) {
       const saved = scanState.savedSearches.find((search) => search.id === scanState.activeSavedSearchId);
-      if (saved) $('savedSearchStatus').textContent = `Loaded “${saved.name}”. Results reflect the latest scan.`;
+      if (saved) {
+        $('savedSearchStatus').textContent = savedArtifactPaths
+          ? `Loaded “${saved.name}”. Saved directories refreshed.`
+          : `Loaded “${saved.name}”. Results reflect the latest scan.`;
+      }
     }
   } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
   finally {

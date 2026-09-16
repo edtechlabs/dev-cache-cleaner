@@ -24,7 +24,8 @@ with the native macOS folder picker, or enter a path manually.
 Use **Save current** to store a named project search locally, including its
 root, filters, sort order, and current result list. Selecting a saved search
 restores those settings and saved results immediately; use **Scan** to refresh
-them. After deleting artifacts, its results are rescanned and saved again.
+the saved artifact directories only. After deleting artifacts, those directories
+are rescanned and the saved results are updated.
 Click any results-table column heading to sort it; click again to reverse the
 order. The Size, Last modified, and Age columns start with largest/newest or
 oldest-first views as appropriate. The sort dropdown remains available for
