@@ -1513,6 +1513,7 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
         "target" if p.join("pom.xml").exists()         => Some("Maven build"),
         "target" if p.join("build.gradle").exists()
                   || p.join("build.gradle.kts").exists() => Some("Gradle build"),
+        ".gradle" if is_android_project_path(path) => Some("Android Gradle cache"),
         ".gradle" => Some("Gradle cache"),
         // Go
         "vendor" if p.join("go.mod").exists() => Some("Go vendor"),
@@ -1521,6 +1522,13 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
         // iOS / macOS
         "Pods" if p.join("Podfile").exists() => Some("CocoaPods"),
         "DerivedData" => Some("Xcode DerivedData"),
+        // Android project output and IDE/native build leftovers
+        "build" if is_android_project_path(path) => Some("Android build"),
+        ".cxx" if is_android_project_path(path) => Some("Android native build"),
+        ".externalNativeBuild" if is_android_project_path(path) => Some("Android native build"),
+        "captures" if is_android_project_path(path) => Some("Android captures"),
+        ".navigation" if is_android_project_path(path) => Some("Android navigation cache"),
+        ".kotlin" if is_android_project_path(path) => Some("Android Kotlin cache"),
         // Dart / Flutter
         ".dart_tool" => Some("Dart tool cache"),
         "build" if p.join("pubspec.yaml").exists() => Some("Flutter build"),
@@ -1537,6 +1545,25 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
         ".zig-cache"  => Some("Zig cache"),
         _ => None,
     }
+}
+
+/// Returns true when an artifact is inside a directory tree that looks like
+/// an Android project or module. This keeps generic names such as `build` and
+/// `captures` from matching unrelated projects.
+fn is_android_project_path(path: &Path) -> bool {
+    let mut current = path.parent();
+    for _ in 0..=5 {
+        let Some(dir) = current else { break };
+        if dir.join("AndroidManifest.xml").exists()
+            || dir.join("src/main/AndroidManifest.xml").exists()
+            || (dir.join("settings.gradle").exists() || dir.join("settings.gradle.kts").exists())
+                && dir.join("app").is_dir()
+        {
+            return true;
+        }
+        current = dir.parent();
+    }
+    false
 }
 
 #[tauri::command]

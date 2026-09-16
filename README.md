@@ -14,8 +14,10 @@ The GUI currently provides two tabs:
   selective cleanup.
 - **Project Artifact Scanner** recursively scans a chosen root such as
   `~/Code` for supported build and dependency artifacts, reports project,
-  artifact type, size, and age, and lets you move selected artifacts to Trash
-  or permanently delete them.
+  artifact type, size, and age. Android projects include Gradle/module
+  `build` output, `.cxx`, `.externalNativeBuild`, `captures`, `.navigation`,
+  and `.kotlin` leftovers. Selected artifacts can be moved to Trash or
+  permanently deleted.
 
 The standalone `cache-cleaner` CLI supports scanning and listing targets,
 JSON output, dry runs, selective or category-based cleanup, permanent-delete
@@ -64,7 +66,8 @@ the CLI `--yes` option is supplied.
 
 Recursively walks a chosen root directory (e.g. `~/Code`) to find per-project
 artifact directories: `node_modules`, `.venv`, Rust/Maven/Gradle `target`,
-`.next`, `.terraform`, CocoaPods `Pods`, and 40+ more patterns.
+Android `build`/`.cxx` output, `.externalNativeBuild`, `.next`, `.terraform`,
+CocoaPods `Pods`, and 40+ more patterns.
 Results show project name, artifact type, size, and last-modified age
 with colour-coded staleness chips.
 
