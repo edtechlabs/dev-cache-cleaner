@@ -96,6 +96,7 @@ button.icon-btn:hover { opacity: 1; }
 h1 { margin: 0; font-size: 42px; letter-spacing: -.04em; }
 h2 { margin: 0; font-size: 16px; }
 .subline { max-width: 790px; line-height: 1.5; color: #cbd5e1; margin: 8px 0 0; }
+.subline code { display: inline; word-break: normal; margin-top: 0; }
 .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── Toolbar ── */
