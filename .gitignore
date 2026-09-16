@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Frontend and Tauri build output
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# IDE and local tooling
+.idea/
+.vscode/
+.codex-logs/
+
+# macOS and local runtime files
+.DS_Store
+*.log
+*.pid
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Rust tooling output
+**/target/

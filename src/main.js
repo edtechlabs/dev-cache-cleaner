@@ -1,0 +1,777 @@
+import { invoke } from '@tauri-apps/api/core';
+import './styles.css';
+
+const app = document.querySelector('#app');
+
+// window.prompt() is unsupported in WKWebView — custom modal instead
+function showPrompt(message, expectedPhrase) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <p class="modal-msg">${escapeHtml(message)}</p>
+        <input class="modal-input" type="text" placeholder="Type ${escapeHtml(expectedPhrase)} to confirm" autocomplete="off" />
+        <div class="modal-actions">
+          <button class="modal-cancel">Cancel</button>
+          <button class="modal-confirm danger" disabled>Confirm</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.modal-input');
+    const confirmBtn = overlay.querySelector('.modal-confirm');
+    input.addEventListener('input', () => { confirmBtn.disabled = input.value.trim() !== expectedPhrase; });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && input.value.trim() === expectedPhrase) done(true);
+      if (e.key === 'Escape') done(false);
+    });
+    confirmBtn.addEventListener('click', () => done(true));
+    overlay.querySelector('.modal-cancel').addEventListener('click', () => done(false));
+    function done(ok) { overlay.remove(); resolve(ok ? input.value.trim() : null); }
+    requestAnimationFrame(() => input.focus());
+  });
+}
+
+// ── App state ─────────────────────────────────────────────────────────────────
+
+let state = {
+  report: null, selected: new Set(),
+  filter: '', riskFilter: 'all', categoryFilter: 'all',
+  lastPlan: null, busy: false,
+  activeRowKey: null,
+  tree: { loading: false, nodes: [], breadcrumb: [], rootLabel: '' },
+};
+
+let scanState = {
+  report: null,
+  selected: new Set(),
+  typeFilter: 'all',
+  minSize: 10 * 1024 * 1024,   // 10 MB default
+  staleDays: 0,                  // 0 = no age filter
+  sortBy: 'size',
+  busy: false,
+};
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+app.innerHTML = `
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="cache">System Cache Cleaner</button>
+    <button class="tab-btn" data-tab="projects">Project Artifact Scanner</button>
+  </div>
+
+  <!-- ═══ Tab 1: Cache Cleaner ═══ -->
+  <div id="pageCacheCleaner" class="tab-page active">
+    <main class="shell">
+      <section class="hero card">
+        <div>
+          <p class="eyebrow">local-only macOS utility</p>
+          <h1>Dev Cache Cleaner</h1>
+          <p class="subline">Discover, dry-run, and clean developer caches for Homebrew, JetBrains, Ollama, Hugging Face, Docker, Python, Rust, Node, Android, and related AI tooling.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="discoverBtn" class="primary">Discover</button>
+          <button id="dryRunBtn">Dry run selected</button>
+          <button id="cleanBtn" class="danger">Clean selected</button>
+        </div>
+      </section>
+
+      <section class="toolbar card">
+        <label>Search
+          <input id="filterInput" type="search" placeholder="ollama, docker, jetbrains…" />
+        </label>
+        <label>Risk
+          <select id="riskFilter">
+            <option value="all">All</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+        <label>Category
+          <select id="categoryFilter"><option value="all">All</option></select>
+        </label>
+        <div class="checks">
+          <label><input id="moveToTrash" type="checkbox" checked /> Move to Trash</label>
+          <label><input id="allowCommands" type="checkbox" /> Allow commands</label>
+          <label><input id="includeHighRisk" type="checkbox" /> Include high-risk</label>
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stat card"><span>Discovered</span><strong id="totalSize">—</strong></div>
+        <div class="stat card"><span>Selected</span><strong id="selectedSize">—</strong></div>
+        <div class="stat card"><span>Items</span><strong id="itemCount">—</strong></div>
+        <div class="stat card"><span>Last scan</span><strong id="lastScan">—</strong></div>
+      </section>
+
+      <section class="quick card">
+        <button id="selectDefaults">Select safe defaults</button>
+        <button id="selectLow">Low risk only</button>
+        <button id="selectNone">Select none</button>
+        <button id="copyPlan" class="small">Copy last plan</button>
+      </section>
+
+      <section class="log-card card">
+        <div class="log-header"><h2>Plan / log</h2></div>
+        <div id="warnings" class="warnings"></div>
+        <pre id="logBox">No actions yet.</pre>
+      </section>
+
+      <div class="main-grid">
+        <section class="card table-card">
+          <div class="table-header">
+            <h2>Discovery results</h2>
+            <span id="visibleCount">No scan yet</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th class="col-sel"></th>
+                  <th>Target</th>
+                  <th class="col-cat">Category</th>
+                  <th class="col-risk">Risk</th>
+                  <th class="col-size">Size</th>
+                  <th class="col-path">Path / command</th>
+                </tr>
+              </thead>
+              <tbody id="itemsBody">
+                <tr><td colspan="6" class="empty">Click Discover to scan known developer cache locations.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="card tree-card" id="treeCard">
+          <div class="tree-header">
+            <span class="tree-title" id="treeTitle">Contents</span>
+            <button class="icon-btn" id="treeCloseBtn" title="Close">✕</button>
+          </div>
+          <nav class="tree-crumb" id="treeCrumb"></nav>
+          <div class="tree-body" id="treeBody">
+            <div class="tree-empty">Click any row to browse<br>its filesystem contents.</div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══ Tab 2: Project Artifact Scanner ═══ -->
+  <div id="pageProjectScanner" class="tab-page">
+    <main class="shell">
+      <section class="hero card">
+        <div>
+          <p class="eyebrow">project workspace scanner</p>
+          <h1>Project Artifacts</h1>
+          <p class="subline">Recursively find <code style="font-size:13px">node_modules</code>, <code style="font-size:13px">.venv</code>, Rust/Java build dirs, and similar artifact folders within a chosen root. Shows project context, sizes, and last-modified age so you can target stale builds.</p>
+        </div>
+        <div class="hero-actions">
+          <button id="scanBtn" class="primary">Scan</button>
+          <button id="deleteArtifactsBtn" class="danger">Delete selected</button>
+        </div>
+      </section>
+
+      <section class="card scanner-config">
+        <div class="scanner-config-grid">
+          <label class="cfg-label">Root directory to scan
+            <div class="dir-row">
+              <input id="scanRoot" type="text" value="~/Code" placeholder="~/Code or ~/Projects" />
+            </div>
+          </label>
+          <label class="cfg-label">Artifact type
+            <select id="artifactTypeFilter"><option value="all">All types</option></select>
+          </label>
+          <label class="cfg-label">Min size
+            <select id="artifactMinSize">
+              <option value="0">Any size</option>
+              <option value="1048576">≥ 1 MB</option>
+              <option value="10485760" selected>≥ 10 MB</option>
+              <option value="104857600">≥ 100 MB</option>
+              <option value="1073741824">≥ 1 GB</option>
+            </select>
+          </label>
+          <label class="cfg-label">Stale — not modified in
+            <select id="artifactStaleFilter">
+              <option value="0">Any age</option>
+              <option value="30">1 month+</option>
+              <option value="90">3 months+</option>
+              <option value="180">6 months+</option>
+              <option value="365" selected>1 year+</option>
+            </select>
+          </label>
+          <label class="cfg-label">Sort by
+            <select id="artifactSortBy">
+              <option value="size">Size (largest first)</option>
+              <option value="age">Age (oldest first)</option>
+              <option value="project">Project name</option>
+              <option value="kind">Artifact type</option>
+            </select>
+          </label>
+          <label class="cfg-label">Delete mode
+            <select id="scanDeleteMode">
+              <option value="trash">Move to Trash</option>
+              <option value="permanent">Permanently delete</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stat card"><span>Total reclaimable</span><strong id="scanTotalSize">—</strong></div>
+        <div class="stat card"><span>Artifacts found</span><strong id="scanArtifactCount">—</strong></div>
+        <div class="stat card"><span>Projects</span><strong id="scanProjectCount">—</strong></div>
+        <div class="stat card"><span>Visible / selected</span><strong id="scanVisibleCount">—</strong></div>
+      </section>
+
+      <section class="quick card">
+        <button id="selectStale">Select stale (≥ 1 yr)</button>
+        <button id="selectHuge">Select large (≥ 500 MB)</button>
+        <button id="selectAllVisible">Select all visible</button>
+        <button id="selectNoneArtifacts">Select none</button>
+      </section>
+
+      <section class="log-card card">
+        <div class="log-header"><h2>Scanner log</h2></div>
+        <pre id="scanLogBox">No scan yet.</pre>
+      </section>
+
+      <section class="card table-card">
+        <div class="table-header">
+          <h2>Found artifacts</h2>
+          <span id="scanTableStatus">Set a root directory and click Scan.</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-sel"></th>
+                <th>Project</th>
+                <th class="col-kind">Artifact type</th>
+                <th class="col-size">Size</th>
+                <th class="col-modified">Last modified</th>
+                <th class="col-age">Age</th>
+              </tr>
+            </thead>
+            <tbody id="artifactsBody">
+              <tr><td colspan="6" class="empty">Set a root directory and click Scan.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+`;
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+const $ = (id) => document.getElementById(id);
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '—';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let v = bytes, u = 0;
+  while (v >= 1024 && u < units.length - 1) { v /= 1024; u++; }
+  return `${v.toFixed(v >= 10 || u === 0 ? 0 : 1)} ${units[u]}`;
+}
+
+function formatNum(n) { return new Intl.NumberFormat().format(n || 0); }
+
+function relativeAge(secs) {
+  const days = (Date.now() / 1000 - secs) / 86400;
+  if (days < 1)   return 'today';
+  if (days < 30)  return `${Math.floor(days)}d`;
+  if (days < 365) return `${Math.floor(days / 30)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
+}
+
+function ageClass(secs) {
+  const days = (Date.now() / 1000 - secs) / 86400;
+  if (days < 30)  return 'age-fresh';
+  if (days < 90)  return 'age-recent';
+  if (days < 365) return 'age-aging';
+  return 'age-stale';
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.tab-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    $('pageCacheCleaner').classList.toggle('active', tab === 'cache');
+    $('pageProjectScanner').classList.toggle('active', tab === 'projects');
+  });
+});
+
+// ── Cache Cleaner — wire-up ───────────────────────────────────────────────────
+
+$('discoverBtn').addEventListener('click', discover);
+$('dryRunBtn').addEventListener('click', dryRun);
+$('cleanBtn').addEventListener('click', cleanSelected);
+$('filterInput').addEventListener('input', (e) => { state.filter = e.target.value.toLowerCase(); render(); });
+$('riskFilter').addEventListener('change', (e) => { state.riskFilter = e.target.value; render(); });
+$('categoryFilter').addEventListener('change', (e) => { state.categoryFilter = e.target.value; render(); });
+$('selectDefaults').addEventListener('click', () => selectMode('defaults'));
+$('selectLow').addEventListener('click', () => selectMode('low'));
+$('selectNone').addEventListener('click', () => { state.selected.clear(); render(); });
+$('copyPlan').addEventListener('click', copyLastPlan);
+$('treeCloseBtn').addEventListener('click', closeTree);
+
+$('itemsBody').addEventListener('click', (e) => {
+  if (e.target.type === 'checkbox') return;
+  const row = e.target.closest('tr[data-row-key]');
+  if (!row) return;
+  const key = row.dataset.rowKey;
+  if (state.activeRowKey === key) { closeTree(); return; }
+  state.activeRowKey = key;
+  updateActiveRowStyle();
+  if (!row.dataset.path) {
+    state.tree = { loading: false, nodes: [], breadcrumb: [], rootLabel: row.dataset.label };
+    $('treeTitle').textContent = row.dataset.label;
+    $('treeCrumb').innerHTML = '';
+    $('treeBody').innerHTML = `<div class="tree-empty">Command target — no filesystem path.<br><code style="display:inline;color:#94a3b8">${escapeHtml(row.dataset.command || '')}</code></div>`;
+    return;
+  }
+  loadTree(row.dataset.path, row.dataset.label, [{ name: row.dataset.label, path: row.dataset.path }]);
+});
+
+// ── Project Scanner — wire-up ─────────────────────────────────────────────────
+
+$('scanBtn').addEventListener('click', runScan);
+$('deleteArtifactsBtn').addEventListener('click', deleteArtifacts);
+$('artifactTypeFilter').addEventListener('change', (e) => { scanState.typeFilter = e.target.value; renderArtifacts(); });
+$('artifactMinSize').addEventListener('change', (e) => { scanState.minSize = +e.target.value; renderArtifacts(); });
+$('artifactStaleFilter').addEventListener('change', (e) => { scanState.staleDays = +e.target.value; renderArtifacts(); });
+$('artifactSortBy').addEventListener('change', (e) => { scanState.sortBy = e.target.value; renderArtifacts(); });
+$('selectStale').addEventListener('click', () => selectArtifactMode('stale'));
+$('selectHuge').addEventListener('click', () => selectArtifactMode('huge'));
+$('selectAllVisible').addEventListener('click', () => selectArtifactMode('all'));
+$('selectNoneArtifacts').addEventListener('click', () => { scanState.selected.clear(); renderArtifacts(); });
+
+$('artifactsBody').addEventListener('change', (e) => {
+  if (e.target.type !== 'checkbox') return;
+  if (e.target.checked) scanState.selected.add(e.target.value);
+  else scanState.selected.delete(e.target.value);
+  updateScanStats();
+});
+
+// ── Cache Cleaner — actions ───────────────────────────────────────────────────
+
+async function discover() {
+  setBusy(true);
+  setLog('Scanning known macOS developer cache locations…');
+  try {
+    const report = await invoke('discover', { options: { includeMissing: false } });
+    state.report = report;
+    state.lastPlan = null;
+    state.selected = new Set(report.items.filter((i) => i.selectedByDefault).map((i) => i.id));
+    updateCategoryOptions(report.items);
+    setLog(`Discovery complete. Found ${report.items.length} targets, ${formatBytes(report.totalBytes)} total.`);
+    render();
+  } catch (err) { setLog(`Discovery error:\n${String(err)}`); }
+  finally { setBusy(false); }
+}
+
+async function dryRun() {
+  if (!state.report) return setLog('Run Discover first.');
+  if (state.selected.size === 0) return setLog('No targets selected.');
+  setBusy(true);
+  try {
+    const plan = await invoke('dry_run', { request: buildRequest() });
+    state.lastPlan = plan;
+    setLog(formatPlan(plan));
+    renderWarnings(plan.warnings || []);
+  } catch (err) { setLog(`Dry run error:\n${String(err)}`); }
+  finally { setBusy(false); }
+}
+
+async function cleanSelected() {
+  if (!state.report) return setLog('Run Discover first.');
+  if (state.selected.size === 0) return setLog('No targets selected.');
+  const request = buildRequest();
+  if (state.report.items.some((i) => state.selected.has(i.id) && i.risk === 'high') && !request.includeHighRisk)
+    return setLog('High-risk target selected but "Include high-risk" is not enabled.');
+  const phrase = request.permanent ? 'DELETE' : 'CLEAN';
+  const answer = await showPrompt(
+    `This will ${request.permanent ? 'permanently delete' : 'move to Trash'} ${state.selected.size} selected target(s). Type ${phrase} to continue.`, phrase);
+  if (answer !== phrase) return setLog('Cleanup cancelled.');
+  setBusy(true);
+  try {
+    const plan = await invoke('clean', { request });
+    state.lastPlan = plan; setLog(formatPlan(plan)); renderWarnings(plan.warnings || []);
+    const refreshed = await invoke('discover', { options: { includeMissing: false } });
+    state.report = refreshed; updateCategoryOptions(refreshed.items); render();
+  } catch (err) { setLog(`Cleanup error:\n${String(err)}`); }
+  finally { setBusy(false); }
+}
+
+// ── Project Scanner — actions ─────────────────────────────────────────────────
+
+async function runScan() {
+  const root = $('scanRoot').value.trim() || '~';
+  scanState.busy = true;
+  $('scanBtn').disabled = true;
+  setScanLog(`Scanning ${root} for project artifact directories…`);
+  try {
+    const report = await invoke('scan_projects', {
+      options: {
+        root,
+        minSizeBytes: 0,   // filtering done in JS
+        maxDepth: 8,
+      },
+    });
+    scanState.report = report;
+    scanState.selected.clear();
+    updateArtifactTypeOptions(report.artifacts);
+    setScanLog(
+      `Scan complete — ${report.artifactCount} artifacts in ${report.projectCount} projects, ` +
+      `${formatBytes(report.totalBytes)} total reclaimable.\n` +
+      `Root: ${report.root}  ·  Scanned at ${new Date(report.generatedAt).toLocaleString()}`
+    );
+    renderArtifacts();
+  } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
+  finally { scanState.busy = false; $('scanBtn').disabled = false; }
+}
+
+async function deleteArtifacts() {
+  if (!scanState.report) return setScanLog('Run a scan first.');
+  if (scanState.selected.size === 0) return setScanLog('No artifacts selected.');
+
+  const permanent = $('scanDeleteMode').value === 'permanent';
+  const phrase = permanent ? 'DELETE' : 'TRASH';
+  const answer = await showPrompt(
+    `This will ${permanent ? 'permanently delete' : 'move to Trash'} ${scanState.selected.size} artifact director${scanState.selected.size === 1 ? 'y' : 'ies'}. Type ${phrase} to continue.`,
+    phrase
+  );
+  if (answer !== phrase) return setScanLog('Cancelled.');
+
+  $('deleteArtifactsBtn').disabled = true;
+  const paths = Array.from(scanState.selected);
+  setScanLog(`Deleting ${paths.length} artifact directories…`);
+  try {
+    const freed = await invoke('delete_artifacts', { request: { paths, permanent } });
+    setScanLog(`Done. Freed ${formatBytes(freed)}.\nRe-scanning to update results…`);
+    scanState.selected.clear();
+    await runScan();
+  } catch (err) { setScanLog(`Delete error:\n${String(err)}`); }
+  finally { $('deleteArtifactsBtn').disabled = false; }
+}
+
+// ── Project Scanner — render ──────────────────────────────────────────────────
+
+function filteredArtifacts() {
+  if (!scanState.report) return [];
+  const nowSecs = Date.now() / 1000;
+  return scanState.report.artifacts
+    .filter((a) => {
+      if (scanState.typeFilter !== 'all' && a.artifactKind !== scanState.typeFilter) return false;
+      if (a.sizeBytes < scanState.minSize) return false;
+      if (scanState.staleDays > 0) {
+        const ageDays = (nowSecs - a.modifiedSecs) / 86400;
+        if (ageDays < scanState.staleDays) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (scanState.sortBy === 'size')    return b.sizeBytes - a.sizeBytes;
+      if (scanState.sortBy === 'age')     return a.modifiedSecs - b.modifiedSecs;
+      if (scanState.sortBy === 'project') return a.projectName.localeCompare(b.projectName);
+      if (scanState.sortBy === 'kind')    return a.artifactKind.localeCompare(b.artifactKind);
+      return 0;
+    });
+}
+
+function renderArtifacts() {
+  const items = filteredArtifacts();
+  const body = $('artifactsBody');
+
+  if (!scanState.report) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">Set a root directory and click Scan.</td></tr>`;
+    updateScanStats();
+    return;
+  }
+  if (items.length === 0) {
+    body.innerHTML = `<tr><td colspan="6" class="empty">No artifacts match the current filters.</td></tr>`;
+    updateScanStats();
+    return;
+  }
+
+  body.innerHTML = items.map(renderArtifactRow).join('');
+  updateScanStats();
+}
+
+function renderArtifactRow(artifact) {
+  const checked = scanState.selected.has(artifact.path) ? 'checked' : '';
+  const shortPath = artifact.path.replace(artifact.projectPath, '').replace(/^\//, '');
+  const modDate = artifact.modifiedSecs
+    ? new Date(artifact.modifiedSecs * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    : '—';
+  const ageStr = artifact.modifiedSecs ? relativeAge(artifact.modifiedSecs) : '—';
+  const cls    = artifact.modifiedSecs ? ageClass(artifact.modifiedSecs) : '';
+  return `
+    <tr>
+      <td class="col-sel"><input type="checkbox" value="${escapeHtml(artifact.path)}" ${checked} /></td>
+      <td>
+        <strong>${escapeHtml(artifact.projectName)}</strong>
+        <div class="note" title="${escapeHtml(artifact.path)}">${escapeHtml(artifact.projectPath)}<span style="color:#60a5fa">/${shortPath}</span></div>
+      </td>
+      <td class="col-kind"><span class="kind-chip">${escapeHtml(artifact.artifactKind)}</span></td>
+      <td class="col-size">${formatBytes(artifact.sizeBytes)}</td>
+      <td class="col-modified">${modDate}</td>
+      <td class="col-age"><span class="age-chip ${cls}">${ageStr}</span></td>
+    </tr>`;
+}
+
+function updateScanStats() {
+  const items = filteredArtifacts();
+  const total = scanState.report?.totalBytes ?? 0;
+  const artifacts = scanState.report?.artifactCount ?? 0;
+  const projects  = scanState.report?.projectCount ?? 0;
+  $('scanTotalSize').textContent = total ? formatBytes(total) : '—';
+  $('scanArtifactCount').textContent = artifacts || '—';
+  $('scanProjectCount').textContent = projects || '—';
+  $('scanVisibleCount').textContent = scanState.report
+    ? `${items.length} / ${scanState.selected.size} sel`
+    : '—';
+  $('scanTableStatus').textContent = scanState.report
+    ? `${items.length} of ${artifacts} artifacts visible`
+    : 'Set a root directory and click Scan.';
+}
+
+function updateArtifactTypeOptions(artifacts) {
+  const kinds = Array.from(new Set(artifacts.map((a) => a.artifactKind))).sort();
+  $('artifactTypeFilter').innerHTML =
+    `<option value="all">All types</option>` +
+    kinds.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+}
+
+function selectArtifactMode(mode) {
+  if (!scanState.report) return;
+  const nowSecs = Date.now() / 1000;
+  const items = filteredArtifacts();
+  scanState.selected.clear();
+  for (const a of items) {
+    if (mode === 'all') { scanState.selected.add(a.path); continue; }
+    if (mode === 'stale') {
+      const days = (nowSecs - a.modifiedSecs) / 86400;
+      if (days >= 365) scanState.selected.add(a.path);
+    }
+    if (mode === 'huge' && a.sizeBytes >= 500 * 1024 * 1024) {
+      scanState.selected.add(a.path);
+    }
+  }
+  renderArtifacts();
+}
+
+function setScanLog(text) { $('scanLogBox').textContent = text; }
+
+// ── Cache Cleaner — tree viewer ───────────────────────────────────────────────
+
+async function loadTree(path, rootLabel, breadcrumb) {
+  state.tree = { loading: true, nodes: [], breadcrumb, rootLabel };
+  $('treeTitle').textContent = rootLabel;
+  renderBreadcrumb();
+  $('treeBody').innerHTML = `<div class="tree-loading"><div class="spinner"></div>Computing sizes…</div>`;
+  try {
+    const nodes = await invoke('list_path', { path });
+    state.tree = { loading: false, nodes, breadcrumb, rootLabel };
+    renderTreeBody();
+  } catch (err) {
+    $('treeBody').innerHTML = `<div class="tree-empty">Error: ${escapeHtml(String(err))}</div>`;
+  }
+}
+
+function navigateTree(name, path) {
+  loadTree(path, state.tree.rootLabel, [...state.tree.breadcrumb, { name, path }]);
+}
+
+function navigateCrumb(index) {
+  const seg = state.tree.breadcrumb[index];
+  loadTree(seg.path, state.tree.rootLabel, state.tree.breadcrumb.slice(0, index + 1));
+}
+
+function closeTree() {
+  state.activeRowKey = null;
+  state.tree = { loading: false, nodes: [], breadcrumb: [], rootLabel: '' };
+  updateActiveRowStyle();
+  $('treeTitle').textContent = 'Contents';
+  $('treeCrumb').innerHTML = '';
+  $('treeBody').innerHTML = `<div class="tree-empty">Click any row to browse<br>its filesystem contents.</div>`;
+}
+
+function renderBreadcrumb() {
+  const parts = state.tree.breadcrumb;
+  if (parts.length <= 1) { $('treeCrumb').innerHTML = ''; return; }
+  $('treeCrumb').innerHTML = parts.map((seg, i) =>
+    i === parts.length - 1
+      ? `<span class="crumb-cur">${escapeHtml(seg.name)}</span>`
+      : `<span class="crumb-seg" data-index="${i}">${escapeHtml(seg.name)}</span><span class="crumb-sep">/</span>`
+  ).join('');
+  $('treeCrumb').querySelectorAll('.crumb-seg').forEach((el) =>
+    el.addEventListener('click', () => navigateCrumb(+el.dataset.index))
+  );
+}
+
+function renderTreeBody() {
+  const { nodes } = state.tree;
+  if (nodes.length === 0) { $('treeBody').innerHTML = '<div class="tree-empty">Empty or unreadable.</div>'; return; }
+  const maxSize = Math.max(...nodes.map((n) => n.sizeBytes), 1);
+  $('treeBody').innerHTML = nodes.map((node) => {
+    const pct = node.sizeBytes ? Math.max(2, Math.round((node.sizeBytes / maxSize) * 100)) : 0;
+    return `<div class="tree-node ${node.isDir ? 'is-dir' : 'is-file'}"
+        data-path="${escapeHtml(node.path)}" data-name="${escapeHtml(node.name)}" title="${escapeHtml(node.path)}">
+      <span class="tree-icon">${node.isDir ? '▸' : '·'}</span>
+      <span class="tree-name">${escapeHtml(node.name)}</span>
+      <div class="tree-bar-track"><div class="tree-bar-fill" style="width:${pct}%"></div></div>
+      <span class="tree-size">${formatBytes(node.sizeBytes)}</span>
+      <span class="tree-count">${node.isDir ? formatNum(node.entryCount) + ' items' : ''}</span>
+    </div>`;
+  }).join('');
+  $('treeBody').querySelectorAll('.tree-node.is-dir').forEach((el) =>
+    el.addEventListener('click', () => navigateTree(el.dataset.name, el.dataset.path))
+  );
+  renderBreadcrumb();
+}
+
+function updateActiveRowStyle() {
+  document.querySelectorAll('tr[data-row-key]').forEach((row) =>
+    row.classList.toggle('row-active', row.dataset.rowKey === state.activeRowKey)
+  );
+}
+
+// ── Cache Cleaner — render ────────────────────────────────────────────────────
+
+function render() {
+  const items = filteredItems();
+  if (!state.report) {
+    $('itemsBody').innerHTML = `<tr><td colspan="6" class="empty">Click Discover to scan known developer cache locations.</td></tr>`;
+    renderStats([]);
+    return;
+  }
+  if (items.length === 0) {
+    $('itemsBody').innerHTML = `<tr><td colspan="6" class="empty">No targets match the current filters.</td></tr>`;
+  } else {
+    $('itemsBody').innerHTML = items.map(renderRow).join('');
+    $('itemsBody').querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener('change', (e) => {
+        if (e.target.checked) state.selected.add(e.target.value);
+        else state.selected.delete(e.target.value);
+        renderStats(filteredItems());
+      });
+      cb.addEventListener('click', (e) => e.stopPropagation());
+    });
+    updateActiveRowStyle();
+  }
+  renderStats(items);
+  renderWarnings(state.report.warnings || []);
+}
+
+function filteredItems() {
+  if (!state.report) return [];
+  const q = state.filter;
+  return state.report.items.filter((item) => {
+    const hay = `${item.label} ${item.category} ${item.path || ''} ${item.command || ''} ${item.note || ''}`.toLowerCase();
+    return (!q || hay.includes(q))
+      && (state.riskFilter === 'all' || item.risk === state.riskFilter)
+      && (state.categoryFilter === 'all' || item.category === state.categoryFilter);
+  });
+}
+
+function renderRow(item) {
+  const checked = state.selected.has(item.id) ? 'checked' : '';
+  const disabled = item.exists ? '' : 'disabled';
+  const warning = item.warning ? `<div class="row-warning">${escapeHtml(item.warning)}</div>` : '';
+  const rowKey = `${item.id}::${item.path || item.command || ''}`;
+  return `
+    <tr data-row-key="${escapeHtml(rowKey)}" data-path="${escapeHtml(item.path || '')}"
+        data-command="${escapeHtml(item.command || '')}" data-label="${escapeHtml(item.label)}" class="risk-${item.risk}">
+      <td class="col-sel"><input type="checkbox" value="${escapeHtml(item.id)}" ${checked} ${disabled} /></td>
+      <td><strong>${escapeHtml(item.label)}</strong><div class="note">${escapeHtml(item.note)}</div>${warning}</td>
+      <td class="col-cat">${escapeHtml(item.category)}</td>
+      <td class="col-risk"><span class="chip ${item.risk}">${item.risk}</span></td>
+      <td class="col-size">${formatBytes(item.sizeBytes)}</td>
+      <td class="col-path"><code>${escapeHtml(item.path || item.command || '—')}</code></td>
+    </tr>`;
+}
+
+function renderStats(visibleItems) {
+  const all = state.report?.items || [];
+  const sel = all.filter((i) => state.selected.has(i.id));
+  $('totalSize').textContent = state.report ? formatBytes(state.report.totalBytes) : '—';
+  $('selectedSize').textContent = formatBytes(sel.reduce((s, i) => s + i.sizeBytes, 0));
+  $('itemCount').textContent = state.report ? String(all.length) : '—';
+  $('visibleCount').textContent = state.report ? `${visibleItems.length} visible / ${all.length} found` : 'No scan yet';
+  $('lastScan').textContent = state.report ? new Date(state.report.generatedAt).toLocaleString() : '—';
+}
+
+function renderWarnings(warnings) {
+  $('warnings').innerHTML = (warnings || []).map((w) => `<div class="warn">${escapeHtml(w)}</div>`).join('');
+}
+
+function updateCategoryOptions(items) {
+  const cats = Array.from(new Set(items.map((i) => i.category))).sort();
+  $('categoryFilter').innerHTML = `<option value="all">All</option>` +
+    cats.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+}
+
+function selectMode(mode) {
+  if (!state.report) return;
+  state.selected.clear();
+  for (const item of state.report.items) {
+    if (mode === 'defaults' && item.selectedByDefault) state.selected.add(item.id);
+    if (mode === 'low'      && item.risk === 'low')    state.selected.add(item.id);
+  }
+  render();
+}
+
+function buildRequest() {
+  return {
+    selectedIds: Array.from(state.selected),
+    permanent: !$('moveToTrash').checked,
+    allowCommands: $('allowCommands').checked,
+    includeHighRisk: $('includeHighRisk').checked,
+  };
+}
+
+function formatPlan(plan) {
+  const lines = [
+    `${plan.dryRun ? 'DRY RUN' : 'CLEANUP'} @ ${new Date(plan.generatedAt).toLocaleString()}`,
+    `Mode: ${plan.permanent ? 'permanent delete' : 'move to Trash'}`,
+    `Affected: ${formatBytes(plan.totalBytes)}`, '',
+  ];
+  for (const a of plan.actions) {
+    lines.push(`- [${a.status}] ${a.label} (${a.risk}, ${a.category})`);
+    if (a.path)    lines.push(`  path: ${a.path}`);
+    if (a.command) lines.push(`  command: ${a.command}`);
+    if (a.sizeBytes) lines.push(`  size: ${formatBytes(a.sizeBytes)}`);
+    if (a.output) {
+      const out = a.output.length > 1200 ? `${a.output.slice(0, 1200)}…` : a.output;
+      lines.push(...String(out).split('\n').map((l, i) => `${i === 0 ? '  output: ' : '          '}${l}`));
+    }
+  }
+  if (plan.warnings?.length) { lines.push('', 'Warnings:'); plan.warnings.forEach((w) => lines.push(`- ${w}`)); }
+  return lines.join('\n');
+}
+
+async function copyLastPlan() {
+  if (!state.lastPlan) return setLog('No dry-run or cleanup plan to copy yet.');
+  await navigator.clipboard.writeText(formatPlan(state.lastPlan));
+  setLog('Copied last plan to clipboard.');
+}
+
+function setBusy(b) {
+  state.busy = b;
+  ['discoverBtn', 'dryRunBtn', 'cleanBtn'].forEach((id) => $(id).disabled = b);
+}
+
+function setLog(text) { $('logBox').textContent = text; }
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+render();
+updateScanStats();
