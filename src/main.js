@@ -50,6 +50,7 @@ let scanState = {
   minSize: 10 * 1024 * 1024,   // 10 MB default
   staleDays: 0,                  // 0 = no age filter
   sortBy: 'size',
+  sortDirection: 'desc',
   busy: false,
 };
 
@@ -206,6 +207,7 @@ app.innerHTML = `
             <select id="artifactSortBy">
               <option value="size">Size (largest first)</option>
               <option value="age">Age (oldest first)</option>
+              <option value="modified">Last modified (newest first)</option>
               <option value="project">Project name</option>
               <option value="kind">Artifact type</option>
             </select>
@@ -248,11 +250,11 @@ app.innerHTML = `
             <thead>
               <tr>
                 <th class="col-sel"></th>
-                <th>Project</th>
-                <th class="col-kind">Artifact type</th>
-                <th class="col-size">Size</th>
-                <th class="col-modified">Last modified</th>
-                <th class="col-age">Age</th>
+                <th data-sort-header="project"><button class="sort-button" data-sort="project" type="button">Project <span class="sort-indicator"></span></button></th>
+                <th class="col-kind" data-sort-header="kind"><button class="sort-button" data-sort="kind" type="button">Artifact type <span class="sort-indicator"></span></button></th>
+                <th class="col-size" data-sort-header="size"><button class="sort-button" data-sort="size" type="button">Size <span class="sort-indicator"></span></button></th>
+                <th class="col-modified" data-sort-header="modified"><button class="sort-button" data-sort="modified" type="button">Last modified <span class="sort-indicator"></span></button></th>
+                <th class="col-age" data-sort-header="age"><button class="sort-button" data-sort="age" type="button">Age <span class="sort-indicator"></span></button></th>
               </tr>
             </thead>
             <tbody id="artifactsBody">
@@ -350,7 +352,11 @@ $('chooseScanRoot').addEventListener('click', chooseScanRoot);
 $('artifactTypeFilter').addEventListener('change', (e) => { scanState.typeFilter = e.target.value; renderArtifacts(); });
 $('artifactMinSize').addEventListener('change', (e) => { scanState.minSize = +e.target.value; renderArtifacts(); });
 $('artifactStaleFilter').addEventListener('change', (e) => { scanState.staleDays = +e.target.value; renderArtifacts(); });
-$('artifactSortBy').addEventListener('change', (e) => { scanState.sortBy = e.target.value; renderArtifacts(); });
+$('artifactSortBy').addEventListener('change', (e) => setArtifactSort(e.target.value));
+$('artifactsBody').closest('table').querySelector('thead').addEventListener('click', (e) => {
+  const button = e.target.closest('[data-sort]');
+  if (button) setArtifactSort(button.dataset.sort);
+});
 $('selectStale').addEventListener('click', () => selectArtifactMode('stale'));
 $('selectHuge').addEventListener('click', () => selectArtifactMode('huge'));
 $('selectAllVisible').addEventListener('click', () => selectArtifactMode('all'));
@@ -497,12 +503,41 @@ function filteredArtifacts() {
       return true;
     })
     .sort((a, b) => {
-      if (scanState.sortBy === 'size')    return b.sizeBytes - a.sizeBytes;
-      if (scanState.sortBy === 'age')     return a.modifiedSecs - b.modifiedSecs;
-      if (scanState.sortBy === 'project') return a.projectName.localeCompare(b.projectName);
-      if (scanState.sortBy === 'kind')    return a.artifactKind.localeCompare(b.artifactKind);
-      return 0;
+      let result;
+      if (scanState.sortBy === 'size') result = a.sizeBytes - b.sizeBytes;
+      else if (scanState.sortBy === 'modified') result = a.modifiedSecs - b.modifiedSecs;
+      else if (scanState.sortBy === 'age') result = b.modifiedSecs - a.modifiedSecs;
+      else if (scanState.sortBy === 'project') result = a.projectName.localeCompare(b.projectName);
+      else if (scanState.sortBy === 'kind') result = a.artifactKind.localeCompare(b.artifactKind);
+      else result = 0;
+      if (result === 0) result = a.path.localeCompare(b.path);
+      return scanState.sortDirection === 'asc' ? result : -result;
     });
+}
+
+function setArtifactSort(sortBy) {
+  if (scanState.sortBy === sortBy) {
+    scanState.sortDirection = scanState.sortDirection === 'asc' ? 'desc' : 'asc';
+  } else {
+    scanState.sortBy = sortBy;
+    scanState.sortDirection = sortBy === 'size' || sortBy === 'modified' || sortBy === 'age' ? 'desc' : 'asc';
+  }
+  $('artifactSortBy').value = sortBy;
+  renderArtifacts();
+}
+
+function updateArtifactSortIndicators() {
+  document.querySelectorAll('[data-sort-header]').forEach((header) => {
+    const button = header.querySelector('[data-sort]');
+    const active = button.dataset.sort === scanState.sortBy;
+    header.setAttribute('aria-sort', active
+      ? (scanState.sortDirection === 'asc' ? 'ascending' : 'descending')
+      : 'none');
+    button.classList.toggle('active', active);
+    button.querySelector('.sort-indicator').textContent = active
+      ? (scanState.sortDirection === 'asc' ? ' ↑' : ' ↓')
+      : '';
+  });
 }
 
 function renderArtifacts() {
@@ -521,6 +556,7 @@ function renderArtifacts() {
   }
 
   body.innerHTML = items.map(renderArtifactRow).join('');
+  updateArtifactSortIndicators();
   updateScanStats();
 }
 
@@ -794,3 +830,4 @@ function setLog(text) { $('logBox').textContent = text; }
 
 render();
 updateScanStats();
+updateArtifactSortIndicators();
