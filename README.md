@@ -43,6 +43,8 @@ the CLI `--yes` option is supplied.
 The GUI’s **How searches work** tab explains the fixed system paths, glob
 patterns, project traversal rules, Android markers, filters, and cleanup
 parameters used by the two scanners.
+The top-right status badge reports the main Tauri process’s resident memory
+usage and refreshes every three seconds.
 
 ---
 

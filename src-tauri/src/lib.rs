@@ -1477,6 +1477,29 @@ fn command_stdout(executable: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+#[tauri::command]
+fn memory_usage() -> Result<u64, String> {
+    let pid = std::process::id().to_string();
+    let output = Command::new("ps")
+        .args(["-o", "rss=", "-p", &pid])
+        .output()
+        .map_err(|error| format!("failed to read process memory: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "ps exited with {}: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+
+    let resident_kib = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .parse::<u64>()
+        .map_err(|error| format!("invalid process memory value: {error}"))?;
+    Ok(resident_kib.saturating_mul(1024))
+}
+
 fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
 }
@@ -1897,7 +1920,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, delete_artifacts])
+        .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, delete_artifacts, memory_usage])
         .run(tauri::generate_context!())
         .expect("error while running macOS Dev Cache Cleaner");
 }

@@ -46,6 +46,21 @@ button.icon-btn:hover { opacity: 1; }
 }
 .tab-btn.active { background: rgba(17,24,39,.78); color: #dbeafe; }
 .tab-btn:hover:not(.active) { background: rgba(255,255,255,.08); color: #e2e8f0; transform: none; }
+.memory-badge {
+  margin-left: auto;
+  align-self: center;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  background: rgba(15,23,42,.62);
+  color: #94a3b8;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.memory-badge strong { color: #dbeafe; font-size: 12px; }
 
 /* ── Tab pages ── */
 .tab-page { display: none; }

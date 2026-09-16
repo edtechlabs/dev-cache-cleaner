@@ -64,6 +64,9 @@ app.innerHTML = `
     <button class="tab-btn active" data-tab="cache">System Cache Cleaner</button>
     <button class="tab-btn" data-tab="projects">Project Artifact Scanner</button>
     <button class="tab-btn" data-tab="info">How searches work</button>
+    <div class="memory-badge" title="Resident memory used by the main Tauri process">
+      <span>Memory</span><strong id="memoryUsage">—</strong>
+    </div>
   </div>
 
   <!-- ═══ Tab 1: Cache Cleaner ═══ -->
@@ -1019,6 +1022,20 @@ function setBusy(b) {
 
 function setLog(text) { $('logBox').textContent = text; }
 
+let memoryPollBusy = false;
+async function updateMemoryUsage() {
+  if (memoryPollBusy) return;
+  memoryPollBusy = true;
+  try {
+    const bytes = await invoke('memory_usage');
+    $('memoryUsage').textContent = formatBytes(bytes);
+  } catch (_) {
+    $('memoryUsage').textContent = 'unavailable';
+  } finally {
+    memoryPollBusy = false;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 render();
@@ -1026,3 +1043,5 @@ updateScanStats();
 updateArtifactSortIndicators();
 listen('project-progress', (event) => updateScanProgress(event.payload));
 listen('project-artifact-batch', (event) => addLiveArtifactBatch(event.payload));
+updateMemoryUsage();
+setInterval(updateMemoryUsage, 3000);
