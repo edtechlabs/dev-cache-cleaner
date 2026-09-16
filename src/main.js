@@ -605,8 +605,37 @@ function currentSearchDefinition() {
 }
 
 function persistSavedSearches() {
-  localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(scanState.savedSearches));
-  renderSavedSearchOptions();
+  try {
+    localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(scanState.savedSearches));
+    renderSavedSearchOptions();
+    return true;
+  } catch (_) {
+    $('savedSearchStatus').textContent = 'Could not save this search; local storage is full.';
+    return false;
+  }
+}
+
+function savedResultsSnapshot(report) {
+  if (!report) return null;
+  return {
+    root: report.root,
+    artifacts: report.artifacts,
+    totalBytes: report.totalBytes,
+    artifactCount: report.artifactCount,
+    projectCount: report.projectCount,
+    generatedAt: report.generatedAt,
+  };
+}
+
+function updateActiveSavedSearchResults(report) {
+  if (!scanState.activeSavedSearchId) return;
+  const index = scanState.savedSearches.findIndex((search) => search.id === scanState.activeSavedSearchId);
+  if (index < 0) return;
+  scanState.savedSearches[index] = {
+    ...scanState.savedSearches[index],
+    results: savedResultsSnapshot(report),
+  };
+  persistSavedSearches();
 }
 
 function renderSavedSearchOptions() {
@@ -631,6 +660,7 @@ async function saveCurrentSearch() {
     id: existing?.id || selected?.id || `search-${Date.now()}`,
     name,
     ...currentSearchDefinition(),
+    results: savedResultsSnapshot(scanState.report),
   };
   const replacedIds = new Set([search.id]);
   if (selected) replacedIds.add(selected.id);
@@ -657,9 +687,20 @@ async function loadSavedSearch() {
   $('artifactMinSize').value = String(scanState.minSize);
   $('artifactStaleFilter').value = String(scanState.staleDays);
   $('artifactSortBy').value = scanState.sortBy;
-  $('savedSearchStatus').textContent = `Loaded “${search.name}”. Scanning…`;
+  updateArtifactTypeOptions(search.results?.artifacts || []);
+  if (search.results && Array.isArray(search.results.artifacts)) {
+    scanState.report = {
+      ...search.results,
+      artifacts: search.results.artifacts,
+    };
+    scanState.selected.clear();
+    renderArtifacts();
+    $('savedSearchStatus').textContent = `Loaded “${search.name}”. Showing saved results; click Scan to refresh.`;
+    setScanLog(`Loaded saved results for “${search.name}”.`);
+    return;
+  }
+  $('savedSearchStatus').textContent = `Loaded “${search.name}”. No saved results yet; scanning…`;
   await runScan();
-  $('savedSearchStatus').textContent = `Loaded “${search.name}”. Results reflect the latest scan.`;
 }
 
 async function deleteSavedSearch() {
@@ -707,6 +748,7 @@ async function runScan() {
     scanState.report = report;
     scanState.selected.clear();
     updateArtifactTypeOptions(report.artifacts);
+    updateActiveSavedSearchResults(report);
     setScanLog(
       `Scan complete — ${report.artifactCount} artifacts in ${report.projectCount} projects, ` +
       `${formatBytes(report.totalBytes)} total reclaimable.\n` +
