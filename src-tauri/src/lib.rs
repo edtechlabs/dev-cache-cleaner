@@ -163,9 +163,32 @@ struct ProjectProgress {
     bytes: u64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectArtifactBatch {
+    root: String,
+    artifacts: Vec<ProjectArtifact>,
+}
+
 fn emit_project_progress(app: Option<&AppHandle>, progress: ProjectProgress) {
     if let Some(app) = app {
         let _ = app.emit("project-progress", progress);
+    }
+}
+
+fn emit_project_artifact_batch(
+    app: Option<&AppHandle>,
+    root: &Path,
+    artifacts: &[ProjectArtifact],
+) {
+    if let Some(app) = app {
+        let _ = app.emit(
+            "project-artifact-batch",
+            ProjectArtifactBatch {
+                root: root.display().to_string(),
+                artifacts: artifacts.to_vec(),
+            },
+        );
     }
 }
 
@@ -1616,6 +1639,7 @@ fn scan_projects_impl(
     let max_depth = options.max_depth.unwrap_or(8);
     let min_size  = options.min_size_bytes.unwrap_or(0);
     let mut artifacts: Vec<ProjectArtifact> = Vec::new();
+    let mut emitted_artifact_count = 0usize;
     let mut directories_scanned = 0u64;
 
     emit_project_progress(
@@ -1691,6 +1715,15 @@ fn scan_projects_impl(
                     file_count:   stats.file_count,
                     modified_secs,
                 });
+
+                if artifacts.len() - emitted_artifact_count >= 25 {
+                    emit_project_artifact_batch(
+                        app,
+                        &root,
+                        &artifacts[emitted_artifact_count..],
+                    );
+                    emitted_artifact_count = artifacts.len();
+                }
             }
             it.skip_current_dir(); // never recurse inside artifact dirs
         }
@@ -1718,6 +1751,10 @@ fn scan_projects_impl(
         .map(|a| a.project_path.as_str())
         .collect::<HashSet<_>>()
         .len() as u64;
+
+    if emitted_artifact_count < artifacts.len() {
+        emit_project_artifact_batch(app, &root, &artifacts[emitted_artifact_count..]);
+    }
 
     emit_project_progress(
         app,

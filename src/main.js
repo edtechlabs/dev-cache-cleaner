@@ -53,6 +53,8 @@ let scanState = {
   sortBy: 'size',
   sortDirection: 'desc',
   busy: false,
+  acceptLiveBatches: false,
+  liveRenderTimer: null,
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -535,6 +537,18 @@ async function chooseScanRoot() {
 async function runScan() {
   const root = $('scanRoot').value.trim() || '~';
   scanState.busy = true;
+  scanState.acceptLiveBatches = true;
+  scanState.selected.clear();
+  scanState.report = {
+    root,
+    artifacts: [],
+    totalBytes: 0,
+    artifactCount: 0,
+    projectCount: 0,
+    generatedAt: new Date().toISOString(),
+  };
+  updateArtifactTypeOptions([]);
+  renderArtifacts();
   $('scanBtn').disabled = true;
   showScanProgress('scan');
   setScanLog(`Scanning ${root} for project artifact directories…`);
@@ -546,6 +560,11 @@ async function runScan() {
         maxDepth: 8,
       },
     });
+    if (scanState.liveRenderTimer) {
+      clearTimeout(scanState.liveRenderTimer);
+      scanState.liveRenderTimer = null;
+    }
+    scanState.acceptLiveBatches = false;
     scanState.report = report;
     scanState.selected.clear();
     updateArtifactTypeOptions(report.artifacts);
@@ -556,7 +575,12 @@ async function runScan() {
     );
     renderArtifacts();
   } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
-  finally { scanState.busy = false; $('scanBtn').disabled = false; hideScanProgress(); }
+  finally {
+    scanState.busy = false;
+    scanState.acceptLiveBatches = false;
+    $('scanBtn').disabled = false;
+    hideScanProgress();
+  }
 }
 
 async function deleteArtifacts() {
@@ -620,6 +644,24 @@ function updateScanProgress(payload) {
     $('scanProgressCount').textContent = `${payload.current} / ${total}`;
     $('scanProgressBar').style.width = `${percent}%`;
     $('scanProgressPath').textContent = payload.path || '';
+  }
+}
+
+function addLiveArtifactBatch(payload) {
+  if (!scanState.acceptLiveBatches || !Array.isArray(payload.artifacts)) return;
+  scanState.report.root = payload.root;
+  scanState.report.artifacts.push(...payload.artifacts);
+  scanState.report.artifactCount = scanState.report.artifacts.length;
+  scanState.report.totalBytes += payload.artifacts.reduce((sum, artifact) => sum + artifact.sizeBytes, 0);
+  scanState.report.projectCount = new Set(
+    scanState.report.artifacts.map((artifact) => artifact.projectPath)
+  ).size;
+
+  if (!scanState.liveRenderTimer) {
+    scanState.liveRenderTimer = setTimeout(() => {
+      scanState.liveRenderTimer = null;
+      renderArtifacts();
+    }, 500);
   }
 }
 
@@ -743,7 +785,9 @@ function updateScanStats() {
     : '—';
   $('scanSelectedSize').textContent = scanState.report ? formatBytes(selectedSize) : '—';
   $('scanTableStatus').textContent = scanState.report
-    ? `${items.length} of ${artifacts} artifacts visible`
+    ? scanState.busy
+      ? `${artifacts} artifacts found so far · ${items.length} visible`
+      : `${items.length} of ${artifacts} artifacts visible`
     : 'Set a root directory and click Scan.';
 }
 
@@ -981,3 +1025,4 @@ render();
 updateScanStats();
 updateArtifactSortIndicators();
 listen('project-progress', (event) => updateScanProgress(event.payload));
+listen('project-artifact-batch', (event) => addLiveArtifactBatch(event.payload));

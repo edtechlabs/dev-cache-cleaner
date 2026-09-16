@@ -31,6 +31,8 @@ Artifact paths in the results are shown relative to the selected scan root;
 click a project/folder entry to toggle its checkbox.
 Scanning and deletion show live progress in the scanner log, including large
 directory size measurements, while the application remains interactive.
+Completed artifacts stream into the results table in batches during a scan;
+the final result is sorted and rendered again when the scan finishes.
 
 The standalone `cache-cleaner` CLI supports scanning and listing targets,
 JSON output, dry runs, selective or category-based cleanup, permanent-delete
