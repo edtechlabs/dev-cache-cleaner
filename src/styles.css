@@ -244,6 +244,10 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
 .dir-row { display: flex; gap: 8px; }
 .dir-row input { flex: 1; }
 .dir-row button { white-space: nowrap; }
+.saved-searches { padding: 0 16px 16px; }
+.saved-search-row { display: flex; gap: 8px; }
+.saved-search-row select { flex: 1; }
+.saved-search-row button { white-space: nowrap; }
 
 .sort-button {
   border: 0;

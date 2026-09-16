@@ -34,7 +34,48 @@ function showPrompt(message, expectedPhrase) {
   });
 }
 
+function showTextPrompt(message, initialValue = '') {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <p class="modal-msg">${escapeHtml(message)}</p>
+        <input class="modal-input" type="text" value="${escapeHtml(initialValue)}" autocomplete="off" />
+        <div class="modal-actions">
+          <button class="modal-cancel">Cancel</button>
+          <button class="modal-confirm primary">Save</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('.modal-input');
+    const saveBtn = overlay.querySelector('.modal-confirm');
+    const update = () => { saveBtn.disabled = !input.value.trim(); };
+    input.addEventListener('input', update);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && input.value.trim()) done(input.value.trim());
+      if (e.key === 'Escape') done(null);
+    });
+    saveBtn.addEventListener('click', () => done(input.value.trim()));
+    overlay.querySelector('.modal-cancel').addEventListener('click', () => done(null));
+    function done(value) { overlay.remove(); resolve(value); }
+    update();
+    requestAnimationFrame(() => { input.focus(); input.select(); });
+  });
+}
+
 // ── App state ─────────────────────────────────────────────────────────────────
+
+const SAVED_SEARCHES_KEY = 'macos-dev-cache-cleaner.saved-project-searches';
+
+function readSavedSearches() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SAVED_SEARCHES_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed.filter((search) => search && search.id && search.name && search.root) : [];
+  } catch (_) {
+    return [];
+  }
+}
 
 let state = {
   report: null, selected: new Set(),
@@ -55,6 +96,8 @@ let scanState = {
   busy: false,
   acceptLiveBatches: false,
   liveRenderTimer: null,
+  savedSearches: readSavedSearches(),
+  activeSavedSearchId: null,
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -225,6 +268,16 @@ app.innerHTML = `
               <option value="permanent">Permanently delete</option>
             </select>
           </label>
+        </div>
+        <div class="saved-searches">
+          <label class="cfg-label">Saved searches
+            <div class="saved-search-row">
+              <select id="savedSearchSelect"><option value="">Choose a saved search…</option></select>
+              <button id="saveSearchBtn" type="button">Save current</button>
+              <button id="deleteSavedSearchBtn" type="button" disabled>Delete</button>
+            </div>
+          </label>
+          <span id="savedSearchStatus" class="info-note">Saved searches stay on this Mac.</span>
         </div>
       </section>
 
@@ -442,6 +495,9 @@ $('itemsBody').addEventListener('click', (e) => {
 $('scanBtn').addEventListener('click', runScan);
 $('deleteArtifactsBtn').addEventListener('click', deleteArtifacts);
 $('chooseScanRoot').addEventListener('click', chooseScanRoot);
+$('saveSearchBtn').addEventListener('click', saveCurrentSearch);
+$('savedSearchSelect').addEventListener('change', loadSavedSearch);
+$('deleteSavedSearchBtn').addEventListener('click', deleteSavedSearch);
 $('artifactTypeFilter').addEventListener('change', (e) => { scanState.typeFilter = e.target.value; renderArtifacts(); });
 $('artifactMinSize').addEventListener('change', (e) => { scanState.minSize = +e.target.value; renderArtifacts(); });
 $('artifactStaleFilter').addEventListener('change', (e) => { scanState.staleDays = +e.target.value; renderArtifacts(); });
@@ -537,6 +593,86 @@ async function chooseScanRoot() {
   }
 }
 
+function currentSearchDefinition() {
+  return {
+    root: $('scanRoot').value.trim() || '~',
+    typeFilter: scanState.typeFilter,
+    minSize: scanState.minSize,
+    staleDays: scanState.staleDays,
+    sortBy: scanState.sortBy,
+    sortDirection: scanState.sortDirection,
+  };
+}
+
+function persistSavedSearches() {
+  localStorage.setItem(SAVED_SEARCHES_KEY, JSON.stringify(scanState.savedSearches));
+  renderSavedSearchOptions();
+}
+
+function renderSavedSearchOptions() {
+  const select = $('savedSearchSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Choose a saved search…</option>' + scanState.savedSearches
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((search) => `<option value="${escapeHtml(search.id)}">${escapeHtml(search.name)}</option>`)
+    .join('');
+  select.value = scanState.activeSavedSearchId || '';
+  $('deleteSavedSearchBtn').disabled = !scanState.activeSavedSearchId;
+}
+
+async function saveCurrentSearch() {
+  const selected = scanState.savedSearches.find((search) => search.id === scanState.activeSavedSearchId);
+  const name = await showTextPrompt('Name this project artifact search', selected?.name || '');
+  if (!name) return;
+
+  const existing = scanState.savedSearches.find((search) => search.name.toLowerCase() === name.toLowerCase());
+  const search = {
+    id: existing?.id || selected?.id || `search-${Date.now()}`,
+    name,
+    ...currentSearchDefinition(),
+  };
+  const replacedIds = new Set([search.id]);
+  if (selected) replacedIds.add(selected.id);
+  scanState.savedSearches = scanState.savedSearches.filter((item) => !replacedIds.has(item.id));
+  scanState.savedSearches.push(search);
+  scanState.activeSavedSearchId = search.id;
+  persistSavedSearches();
+  $('savedSearchStatus').textContent = `Saved “${name}”. It will refresh after deletion.`;
+}
+
+async function loadSavedSearch() {
+  const id = $('savedSearchSelect').value;
+  scanState.activeSavedSearchId = id || null;
+  renderSavedSearchOptions();
+  if (!id) return;
+  const search = scanState.savedSearches.find((item) => item.id === id);
+  if (!search) return;
+  $('scanRoot').value = search.root;
+  scanState.typeFilter = search.typeFilter || 'all';
+  scanState.minSize = Number(search.minSize) || 0;
+  scanState.staleDays = Number(search.staleDays) || 0;
+  scanState.sortBy = search.sortBy || 'size';
+  scanState.sortDirection = search.sortDirection || 'desc';
+  $('artifactMinSize').value = String(scanState.minSize);
+  $('artifactStaleFilter').value = String(scanState.staleDays);
+  $('artifactSortBy').value = scanState.sortBy;
+  $('savedSearchStatus').textContent = `Loaded “${search.name}”. Scanning…`;
+  await runScan();
+  $('savedSearchStatus').textContent = `Loaded “${search.name}”. Results reflect the latest scan.`;
+}
+
+async function deleteSavedSearch() {
+  const search = scanState.savedSearches.find((item) => item.id === scanState.activeSavedSearchId);
+  if (!search) return;
+  const answer = await showPrompt(`Delete saved search “${search.name}”?`, 'DELETE');
+  if (answer !== 'DELETE') return;
+  scanState.savedSearches = scanState.savedSearches.filter((item) => item.id !== search.id);
+  scanState.activeSavedSearchId = null;
+  persistSavedSearches();
+  $('savedSearchStatus').textContent = 'Saved search deleted.';
+}
+
 async function runScan() {
   const root = $('scanRoot').value.trim() || '~';
   scanState.busy = true;
@@ -577,6 +713,10 @@ async function runScan() {
       `Root: ${report.root}  ·  Scanned at ${new Date(report.generatedAt).toLocaleString()}`
     );
     renderArtifacts();
+    if (scanState.activeSavedSearchId) {
+      const saved = scanState.savedSearches.find((search) => search.id === scanState.activeSavedSearchId);
+      if (saved) $('savedSearchStatus').textContent = `Loaded “${saved.name}”. Results reflect the latest scan.`;
+    }
   } catch (err) { setScanLog(`Scan error:\n${String(err)}`); }
   finally {
     scanState.busy = false;
@@ -806,6 +946,12 @@ function updateArtifactTypeOptions(artifacts) {
   $('artifactTypeFilter').innerHTML =
     `<option value="all">All types</option>` +
     kinds.map((k) => `<option value="${escapeHtml(k)}">${escapeHtml(k)}</option>`).join('');
+  if (artifacts.length === 0) return;
+  if (scanState.typeFilter !== 'all' && kinds.includes(scanState.typeFilter)) {
+    $('artifactTypeFilter').value = scanState.typeFilter;
+  } else if (scanState.typeFilter !== 'all') {
+    scanState.typeFilter = 'all';
+  }
 }
 
 function selectArtifactMode(mode) {
@@ -1048,6 +1194,7 @@ async function updateMemoryUsage() {
 render();
 updateScanStats();
 updateArtifactSortIndicators();
+renderSavedSearchOptions();
 listen('project-progress', (event) => updateScanProgress(event.payload));
 listen('project-artifact-batch', (event) => addLiveArtifactBatch(event.payload));
 updateMemoryUsage();
