@@ -248,6 +248,12 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
 .saved-search-row { display: flex; gap: 8px; }
 .saved-search-row select { flex: 1; }
 .saved-search-row button { white-space: nowrap; }
+.artifact-rules-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 16px; color: #94a3b8; font-size: 12px; }
+.artifact-rules-actions > span { flex: 1; }
+.artifact-rules-actions button { white-space: nowrap; }
+.artifact-results-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 16px; color: #94a3b8; font-size: 12px; }
+.artifact-results-actions > span { flex: 1; }
+.artifact-results-actions button { white-space: nowrap; }
 
 .sort-button {
   border: 0;

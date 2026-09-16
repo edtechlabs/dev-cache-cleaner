@@ -135,7 +135,29 @@ pub struct ProjectScanOptions {
     pub min_size_bytes: Option<u64>,
     pub max_depth: Option<usize>,
     pub artifact_paths: Option<Vec<String>>,
+    pub artifact_rules: Option<Vec<ArtifactRule>>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ArtifactRule {
+    pub directory_name: String,
+    pub artifact_kind: String,
+    #[serde(default)]
+    pub locations: Vec<String>,
+    #[serde(default)]
+    pub requires_outside: Vec<String>,
+    #[serde(default)]
+    pub requires_outside_any: Vec<String>,
+    #[serde(default)]
+    pub requires_inside: Vec<String>,
+    #[serde(default = "default_rule_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+fn default_rule_enabled() -> bool { true }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1569,6 +1591,32 @@ fn artifact_scan_skip(name: &str) -> bool {
     )
 }
 
+fn detect_configured_artifact_kind(name: &str, path: &Path, rules: &[ArtifactRule]) -> Option<String> {
+    let parent = path.parent().unwrap_or(path);
+    rules.iter().find_map(|rule| {
+        if !rule.enabled || rule.directory_name != name { return None; }
+        if !rule.locations.is_empty()
+            && !rule.locations.iter().any(|location| {
+                location == "any" || (location == "android" && is_android_project_path(path))
+            })
+        {
+            return None;
+        }
+        if rule.requires_outside.iter().any(|required| !parent.join(required).exists()) {
+            return None;
+        }
+        if !rule.requires_outside_any.is_empty()
+            && !rule.requires_outside_any.iter().any(|required| parent.join(required).exists())
+        {
+            return None;
+        }
+        if rule.requires_inside.iter().any(|required| !path.join(required).exists()) {
+            return None;
+        }
+        Some(rule.artifact_kind.clone())
+    })
+}
+
 /// Returns a human-readable label if `name` (at `path`) is a known artifact dir.
 fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
     let p = path.parent().unwrap_or(path);
@@ -1669,6 +1717,7 @@ fn scan_projects_impl(
 
     let max_depth = options.max_depth.unwrap_or(8);
     let min_size = options.min_size_bytes.unwrap_or(0);
+    let artifact_rules = options.artifact_rules.as_deref();
     let mut candidates: Vec<ProjectArtifact> = Vec::new();
     let mut directories_scanned = 0u64;
 
@@ -1690,7 +1739,7 @@ fn scan_projects_impl(
             let path = PathBuf::from(normalize_path(raw_path));
             if !path.is_dir() || !seen.insert(path.clone()) { continue; }
             directories_scanned += 1;
-            if let Some(candidate) = project_artifact_candidate(&path) {
+            if let Some(candidate) = project_artifact_candidate(&path, artifact_rules) {
                 candidates.push(candidate);
             }
         }
@@ -1718,7 +1767,7 @@ fn scan_projects_impl(
                 continue;
             }
 
-            if let Some(candidate) = project_artifact_candidate(entry.path()) {
+            if let Some(candidate) = project_artifact_candidate(entry.path(), artifact_rules) {
                 candidates.push(candidate);
                 it.skip_current_dir(); // never recurse inside artifact dirs
             }
@@ -1891,10 +1940,14 @@ fn scan_projects_impl(
     })
 }
 
-fn project_artifact_candidate(path: &Path) -> Option<ProjectArtifact> {
+fn project_artifact_candidate(path: &Path, rules: Option<&[ArtifactRule]>) -> Option<ProjectArtifact> {
     if !path.is_dir() { return None; }
     let name = path.file_name()?.to_string_lossy();
-    let kind = detect_artifact_kind(&name, path)?;
+    let kind = if let Some(rules) = rules {
+        detect_configured_artifact_kind(&name, path, rules)?
+    } else {
+        detect_artifact_kind(&name, path)?.to_string()
+    };
     let parent = path.parent().unwrap_or(path);
     let modified_secs = fs::symlink_metadata(path)
         .ok()
@@ -1906,7 +1959,7 @@ fn project_artifact_candidate(path: &Path) -> Option<ProjectArtifact> {
     Some(ProjectArtifact {
         path: path.display().to_string(),
         dir_name: name.to_string(),
-        artifact_kind: kind.to_string(),
+        artifact_kind: kind,
         project_name: parent.file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default(),

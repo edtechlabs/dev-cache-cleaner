@@ -26,6 +26,12 @@ root, filters, sort order, and current result list. Selecting a saved search
 restores those settings and saved results immediately; use **Scan** to refresh
 the saved artifact directories only. After deleting artifacts, those directories
 are rescanned and the saved results are updated.
+The scanner rules can be exported or imported as JSON. Each rule documents the
+directory name, result type, location conditions, required files outside or
+inside the directory, and a reference URL; imported rules are retained locally.
+Artifact result lists can also be exported and imported as JSON independently
+of a saved search. Importing results replaces the current table and updates the
+active saved search snapshot when one is selected.
 Click any results-table column heading to sort it; click again to reverse the
 order. The Size, Last modified, and Age columns start with largest/newest or
 oldest-first views as appropriate. The sort dropdown remains available for

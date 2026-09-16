@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import defaultArtifactConfig from './project-artifact-rules.json';
 import './styles.css';
 
 const app = document.querySelector('#app');
@@ -67,6 +68,27 @@ function showTextPrompt(message, initialValue = '') {
 // ── App state ─────────────────────────────────────────────────────────────────
 
 const SAVED_SEARCHES_KEY = 'macos-dev-cache-cleaner.saved-project-searches';
+const ARTIFACT_RULES_KEY = 'macos-dev-cache-cleaner.project-artifact-rules';
+
+function validArtifactRules(rules) {
+  return Array.isArray(rules) && rules.length > 0 && rules.every((rule) =>
+    rule && typeof rule.directoryName === 'string' && rule.directoryName.trim()
+      && typeof rule.artifactKind === 'string' && rule.artifactKind.trim()
+      && (!rule.locations || Array.isArray(rule.locations))
+      && (!rule.requiresOutside || Array.isArray(rule.requiresOutside))
+      && (!rule.requiresOutsideAny || Array.isArray(rule.requiresOutsideAny))
+      && (!rule.requiresInside || Array.isArray(rule.requiresInside))
+  );
+}
+
+function readArtifactRules() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ARTIFACT_RULES_KEY) || 'null');
+    return validArtifactRules(parsed) ? parsed : defaultArtifactConfig.rules;
+  } catch (_) {
+    return defaultArtifactConfig.rules;
+  }
+}
 
 function readSavedSearches() {
   try {
@@ -98,6 +120,7 @@ let scanState = {
   liveRenderTimer: null,
   savedSearches: readSavedSearches(),
   activeSavedSearchId: null,
+  artifactRules: readArtifactRules(),
 };
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -279,6 +302,18 @@ app.innerHTML = `
           </label>
           <span id="savedSearchStatus" class="info-note">Saved searches stay on this Mac.</span>
         </div>
+        <div class="artifact-rules-actions">
+          <span><strong>Artifact rules:</strong> <span id="artifactRulesStatus"></span></span>
+          <button id="exportArtifactRules" type="button">Export rules</button>
+          <button id="importArtifactRules" type="button">Import rules</button>
+          <input id="artifactRulesFile" type="file" accept=".json,application/json" hidden />
+        </div>
+        <div class="artifact-results-actions">
+          <span><strong>Artifact results:</strong> <span id="artifactResultsStatus">No result list loaded</span></span>
+          <button id="exportArtifactResults" type="button">Export results</button>
+          <button id="importArtifactResults" type="button">Import results</button>
+          <input id="artifactResultsFile" type="file" accept=".json,application/json" hidden />
+        </div>
       </section>
 
       <section class="stats scanner-stats">
@@ -393,6 +428,7 @@ app.innerHTML = `
             <li>Android leftovers require an Android manifest or a Gradle settings file with an <code>app</code> module. This prevents ordinary folders named <code>build</code> from being mislabeled.</li>
             <li>Once an artifact directory matches, discovery does not recurse inside it again. Exact sizes are then measured concurrently by a bounded pool of up to four workers.</li>
             <li>A loaded saved search refreshes its saved artifact paths directly, so it does not walk the entire root again. New scans without saved results still inspect the complete selected root.</li>
+            <li>The default rules are editable JSON: export or import them beside the scanner controls. Each rule can set its exact directory name, label, <code>any</code>/<code>android</code> location, required outside/inside paths, enabled state, and reference URL.</li>
           </ul>
         </article>
 
@@ -499,6 +535,12 @@ $('chooseScanRoot').addEventListener('click', chooseScanRoot);
 $('saveSearchBtn').addEventListener('click', saveCurrentSearch);
 $('savedSearchSelect').addEventListener('change', loadSavedSearch);
 $('deleteSavedSearchBtn').addEventListener('click', deleteSavedSearch);
+$('exportArtifactRules').addEventListener('click', exportArtifactRules);
+$('importArtifactRules').addEventListener('click', () => $('artifactRulesFile').click());
+$('artifactRulesFile').addEventListener('change', importArtifactRules);
+$('exportArtifactResults').addEventListener('click', exportArtifactResults);
+$('importArtifactResults').addEventListener('click', () => $('artifactResultsFile').click());
+$('artifactResultsFile').addEventListener('change', importArtifactResults);
 $('artifactTypeFilter').addEventListener('change', (e) => { scanState.typeFilter = e.target.value; renderArtifacts(); });
 $('artifactMinSize').addEventListener('change', (e) => { scanState.minSize = +e.target.value; renderArtifacts(); });
 $('artifactStaleFilter').addEventListener('change', (e) => { scanState.staleDays = +e.target.value; renderArtifacts(); });
@@ -616,6 +658,108 @@ function persistSavedSearches() {
   }
 }
 
+function renderArtifactRulesStatus() {
+  $('artifactRulesStatus').textContent = `${scanState.artifactRules.length} rules loaded`;
+}
+
+function persistArtifactRules() {
+  try {
+    localStorage.setItem(ARTIFACT_RULES_KEY, JSON.stringify(scanState.artifactRules));
+    renderArtifactRulesStatus();
+    return true;
+  } catch (_) {
+    $('artifactRulesStatus').textContent = 'storage unavailable';
+    return false;
+  }
+}
+
+function exportArtifactRules() {
+  const config = {
+    version: 1,
+    description: 'Project artifact rules. requiresOutside paths are relative to the artifact parent; requiresInside paths are relative to the artifact.',
+    rules: scanState.artifactRules,
+  };
+  const blob = new Blob([JSON.stringify(config, null, 2) + '\n'], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'project-artifact-rules.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  $('artifactRulesStatus').textContent = `${scanState.artifactRules.length} rules exported`;
+}
+
+function exportArtifactResults() {
+  if (!scanState.report || !Array.isArray(scanState.report.artifacts)) {
+    $('artifactResultsStatus').textContent = 'run or load a scan first';
+    return;
+  }
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    report: savedResultsSnapshot(scanState.report),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2) + '\n'], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'project-artifact-results.json';
+  link.click();
+  URL.revokeObjectURL(url);
+  $('artifactResultsStatus').textContent = `${scanState.report.artifactCount} results exported`;
+}
+
+function normalizeImportedResults(payload) {
+  const report = payload?.report?.artifacts ? payload.report : payload;
+  if (!report || !Array.isArray(report.artifacts)) {
+    throw new Error('Expected a result report containing an artifacts array.');
+  }
+  const artifacts = report.artifacts.filter((artifact) => artifact && typeof artifact.path === 'string');
+  return {
+    root: report.root || $('scanRoot').value.trim() || '~',
+    artifacts,
+    totalBytes: artifacts.reduce((sum, artifact) => sum + (Number(artifact.sizeBytes) || 0), 0),
+    artifactCount: artifacts.length,
+    projectCount: new Set(artifacts.map((artifact) => artifact.projectPath)).size,
+    generatedAt: report.generatedAt || new Date().toISOString(),
+  };
+}
+
+async function importArtifactResults(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const report = normalizeImportedResults(JSON.parse(await file.text()));
+    scanState.report = report;
+    scanState.selected.clear();
+    $('scanRoot').value = report.root;
+    updateArtifactTypeOptions(report.artifacts);
+    renderArtifacts();
+    updateActiveSavedSearchResults(report);
+    $('artifactResultsStatus').textContent = `${report.artifactCount} results imported`;
+    setScanLog(`Imported ${report.artifactCount} artifact results from ${file.name}.`);
+  } catch (error) {
+    $('artifactResultsStatus').textContent = `Import failed: ${String(error.message || error)}`;
+  }
+}
+
+async function importArtifactRules(event) {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const config = JSON.parse(await file.text());
+    const rules = Array.isArray(config) ? config : config.rules;
+    if (!validArtifactRules(rules)) throw new Error('Expected a non-empty rules array with directoryName and artifactKind.');
+    scanState.artifactRules = rules;
+    persistArtifactRules();
+    $('artifactRulesStatus').textContent = `${rules.length} rules imported; click Scan to apply.`;
+  } catch (error) {
+    $('artifactRulesStatus').textContent = `Import failed: ${String(error.message || error)}`;
+  }
+}
+
 function savedResultsSnapshot(report) {
   if (!report) return null;
   return {
@@ -697,6 +841,7 @@ async function loadSavedSearch() {
     scanState.selected.clear();
     renderArtifacts();
     $('savedSearchStatus').textContent = `Loaded “${search.name}”. Showing saved results; Scan refreshes these directories only.`;
+    $('artifactResultsStatus').textContent = `${search.results.artifactCount ?? search.results.artifacts.length} results loaded`;
     setScanLog(`Loaded saved results for “${search.name}”.`);
     return;
   }
@@ -740,6 +885,7 @@ async function runScan() {
       root,
       minSizeBytes: 0,   // filtering done in JS
       maxDepth: 8,
+      artifactRules: scanState.artifactRules,
     };
     if (savedArtifactPaths) options.artifactPaths = savedArtifactPaths;
     const report = await invoke('scan_projects', { options });
@@ -752,6 +898,7 @@ async function runScan() {
     scanState.selected.clear();
     updateArtifactTypeOptions(report.artifacts);
     updateActiveSavedSearchResults(report);
+    $('artifactResultsStatus').textContent = `${report.artifactCount} results loaded`;
     setScanLog(
       `Scan complete — ${report.artifactCount} artifacts in ${report.projectCount} projects, ` +
       `${formatBytes(report.totalBytes)} total reclaimable.\n` +
@@ -1244,6 +1391,7 @@ render();
 updateScanStats();
 updateArtifactSortIndicators();
 renderSavedSearchOptions();
+renderArtifactRulesStatus();
 listen('project-progress', (event) => updateScanProgress(event.payload));
 listen('project-artifact-batch', (event) => addLiveArtifactBatch(event.payload));
 updateMemoryUsage();
