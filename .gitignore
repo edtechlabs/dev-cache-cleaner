@@ -10,6 +10,9 @@ src-tauri/gen/
 .idea/
 .vscode/
 .codex-logs/
+AGENTS.md
+publish.sh
+tasks/
 
 # macOS and local runtime files
 .DS_Store
@@ -19,6 +22,7 @@ src-tauri/gen/
 # Local environment and secrets
 .env
 .env.*
+.config.env
 !.env.example
 
 # Rust tooling output
