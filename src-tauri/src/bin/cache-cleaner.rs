@@ -34,7 +34,7 @@ fn main() {
 #[command(
     name = "cache-cleaner",
     version,
-    about = "macOS developer cache cleaner — server/CLI edition",
+    about = "Developer cache cleaner — server/CLI edition",
     long_about = "Discover, preview, and clean developer caches without a GUI.\n\
                   Defaults to `scan` when no subcommand is given."
 )]
@@ -400,6 +400,7 @@ const FDA_PROBES: &[(&str, &str)] = &[
 ];
 
 fn cmd_permissions(open_settings: bool) -> Result<(), String> {
+    if !cfg!(target_os = "macos") { return Err("Full Disk Access settings apply only to macOS. On Windows, close running developer tools and check folder permissions.".into()); }
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
 
     println!("macOS Full Disk Access — permission check");
@@ -489,6 +490,7 @@ fn log_path() -> PathBuf {
 }
 
 fn cmd_service(action: ServiceAction) -> Result<(), String> {
+    if !cfg!(target_os = "macos") { return Err("LaunchAgent services are macOS-only. On Windows, schedule cache-cleaner.exe with Task Scheduler.".into()); }
     match action {
         ServiceAction::Install { schedule, hour, bin, permanent, allow_commands } =>
             svc_install(schedule, hour, bin, permanent, allow_commands),

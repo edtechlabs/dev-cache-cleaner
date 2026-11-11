@@ -574,7 +574,7 @@ $('artifactsBody').addEventListener('click', (e) => {
 
 async function discover() {
   setBusy(true);
-  setLog('Scanning known macOS developer cache locations…');
+  setLog('Scanning known developer cache locations…');
   try {
     const report = await invoke('discover', { options: { includeMissing: false } });
     state.report = report;
@@ -1131,10 +1131,14 @@ function renderArtifactRow(artifact) {
 }
 
 function relativeArtifactPath(path, root) {
-  const normalizedRoot = root.replace(/[\\/]+$/, '');
-  if (path === normalizedRoot) return '.';
+  path = path.replace(/\\/g, '/');
+  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
+  const windows = /^[a-z]:/i.test(path) || path.startsWith('//');
+  const comparable = windows ? path.toLowerCase() : path;
+  const comparableRoot = windows ? normalizedRoot.toLowerCase() : normalizedRoot;
+  if (comparable === comparableRoot) return '.';
   const prefix = `${normalizedRoot}/`;
-  return path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  return comparable.startsWith(windows ? prefix.toLowerCase() : prefix) ? path.slice(prefix.length) : path;
 }
 
 function updateScanStats() {

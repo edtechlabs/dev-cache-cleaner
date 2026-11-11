@@ -457,3 +457,35 @@ TargetSpec {
 ```
 
 After editing, run `./run_dev.sh` — the Rust backend recompiles automatically.
+
+## Windows development and builds
+
+Windows 10/11 is supported using the native Tauri runner. Install Node.js LTS,
+Rust with the MSVC toolchain, Visual Studio Build Tools with **Desktop development
+with C++** (including the Windows SDK), and Microsoft Edge WebView2 Runtime.
+Open Developer PowerShell for Visual Studio in this repository:
+
+```powershell
+.\run_dev.cmd
+# Build the executable and Windows installers:
+.\build_app.cmd
+```
+
+PowerShell entry points `run_dev.ps1` and `build_app.ps1` are also available.
+The runners check prerequisites and install locked npm dependencies when needed.
+Bundles are written to `src-tauri/target/release/bundle`; the CLI can be built with
+`cargo build --manifest-path src-tauri/Cargo.toml --bin cache-cleaner --release`.
+Run `src-tauri\target\release\cache-cleaner.exe list` to inspect targets, then
+`dry-run --defaults` to preview cleanup.
+
+Windows discovery uses `%LOCALAPPDATA%` and `%APPDATA%` for JetBrains, Android
+Studio, pip, uv, Poetry, npm, Yarn, pnpm, Docker logs, VS Code, Cursor, Composer,
+Ollama logs, and Pub caches. NuGet HTTP caches and optional global packages are
+included. Shared home-based caches (Cargo, Gradle, Maven, models, and others)
+remain available. macOS-only paths and Homebrew commands are excluded.
+Paths accept drive letters, backslashes, forward slashes, UNC shares, and `~`.
+The default cleanup uses the Windows Recycle Bin; close developer tools before
+cleaning locked caches. Windows system folders and AppData are skipped by the
+project scanner, while dedicated cache discovery still checks its known paths.
+The CLI `permissions` and LaunchAgent `service` commands apply only to macOS;
+use Windows Task Scheduler for scheduled CLI cleanup.

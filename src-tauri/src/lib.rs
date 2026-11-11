@@ -248,6 +248,14 @@ struct PathStats {
 }
 
 fn specs() -> Vec<TargetSpec> {
+    let specs = base_specs();
+    #[cfg(windows)]
+    { windows_specs(specs) }
+    #[cfg(not(windows))]
+    { specs }
+}
+
+fn base_specs() -> Vec<TargetSpec> {
     vec![
         TargetSpec {
             id: "brew-download-cache",
@@ -967,6 +975,65 @@ fn specs() -> Vec<TargetSpec> {
     ]
 }
 
+#[cfg(windows)]
+fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
+    let mut result = Vec::new();
+    for mut spec in specs {
+        let replacement: Option<Vec<&'static str>> = match spec.id {
+            "jetbrains-logs" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/log"]),
+            "jetbrains-tmp" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/tmp"]),
+            "jetbrains-jcef-cache" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/jcef_cache"]),
+            "jetbrains-indexes" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/index"]),
+            "jetbrains-system-caches" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/caches"]),
+            "jetbrains-plugin-cache" => Some(vec!["%LOCALAPPDATA%/JetBrains/*/plugins"]),
+            "jetbrains-installed-plugins" => Some(vec!["%APPDATA%/JetBrains/*/plugins"]),
+            "pip-cache" => Some(vec!["%LOCALAPPDATA%/pip/Cache"]),
+            "uv-cache" => Some(vec!["%LOCALAPPDATA%/uv/cache"]),
+            "poetry-cache" => Some(vec!["%LOCALAPPDATA%/pypoetry/Cache"]),
+            "npm-cache" => Some(vec!["%LOCALAPPDATA%/npm-cache/_cacache"]),
+            "yarn-cache" => Some(vec!["%LOCALAPPDATA%/Yarn/Cache"]),
+            "pnpm-store-paths" => Some(vec!["%LOCALAPPDATA%/pnpm/store"]),
+            "android-studio-caches" => Some(vec!["%LOCALAPPDATA%/Google/AndroidStudio*/caches"]),
+            "docker-desktop-logs" => Some(vec!["%LOCALAPPDATA%/Docker/log"]),
+            "pub-cache" => Some(vec!["%LOCALAPPDATA%/Pub/Cache"]),
+            "helm-cache" => Some(vec!["%LOCALAPPDATA%/helm/cache"]),
+            "vscode-logs" => Some(vec!["%APPDATA%/Code/logs"]),
+            "vscode-workspace-storage" => Some(vec!["%APPDATA%/Code/User/workspaceStorage"]),
+            "cursor-logs" => Some(vec!["%APPDATA%/Cursor/logs"]),
+            "cursor-workspace-storage" => Some(vec!["%APPDATA%/Cursor/User/workspaceStorage"]),
+            "composer-cache" => Some(vec!["%LOCALAPPDATA%/Composer"]),
+            "ollama-logs" => Some(vec!["%LOCALAPPDATA%/Ollama/server.log", "%LOCALAPPDATA%/Ollama/app.log"]),
+            _ => None,
+        };
+        if let Some(patterns) = replacement {
+            spec.kind = TargetKind::Path { patterns };
+        } else {
+            match &mut spec.kind {
+                TargetKind::Path { patterns } => {
+                    patterns.retain(|p| !p.contains("Library/") && !p.starts_with("/private/") && *p != "$BREW_CACHE");
+                    if patterns.is_empty() { continue; }
+                }
+                TargetKind::Command { executable: "brew", .. } => continue,
+                _ => {}
+            }
+        }
+        result.push(spec);
+    }
+    result.push(TargetSpec {
+        id: "nuget-http-cache", label: "NuGet HTTP cache", category: ".NET",
+        risk: Risk::Low, default_selected: true,
+        note: "Downloaded NuGet HTTP responses; recreated on restore.",
+        kind: TargetKind::Path { patterns: vec!["%LOCALAPPDATA%/NuGet/v3-cache"] },
+    });
+    result.push(TargetSpec {
+        id: "nuget-packages", label: "NuGet global packages", category: ".NET",
+        risk: Risk::Medium, default_selected: false,
+        note: "Packages must be downloaded again on restore. Close builds before cleaning.",
+        kind: TargetKind::Path { patterns: vec!["~/.nuget/packages"] },
+    });
+    result
+}
+
 #[tauri::command]
 fn discover(options: DiscoverOptions) -> Result<DiscoverReport, String> {
     let include_missing = options.include_missing.unwrap_or(false);
@@ -1377,6 +1444,15 @@ fn expand_patterns(patterns: &[&'static str], warnings: &mut Vec<String>) -> Vec
 }
 
 fn expand_special_pattern(pattern: &str, warnings: &mut Vec<String>) -> Vec<String> {
+    #[cfg(windows)]
+    if let Some(rest) = pattern.strip_prefix('%') {
+        if let Some((name, suffix)) = rest.split_once('%') {
+            return match std::env::var(name) {
+                Ok(value) if !value.is_empty() => vec![format!("{value}{suffix}")],
+                _ => { warnings.push(format!("Environment variable {name} is unavailable")); Vec::new() }
+            };
+        }
+    }
     match pattern {
         "$BREW_CACHE" => {
             if let Ok(path) = command_stdout("brew", &["--cache"]) {
@@ -1393,6 +1469,10 @@ fn expand_special_pattern(pattern: &str, warnings: &mut Vec<String>) -> Vec<Stri
 }
 
 fn normalize_path(raw: &str) -> String {
+    #[cfg(windows)]
+    let windows_raw = raw.replace('\\', "/");
+    #[cfg(windows)]
+    let raw = windows_raw.as_str();
     if raw == "~" {
         if let Some(home) = dirs::home_dir() {
             return home.display().to_string();
@@ -1525,6 +1605,15 @@ fn command_stdout(executable: &str, args: &[&str]) -> Result<String, String> {
 
 #[tauri::command]
 fn memory_usage() -> Result<u64, String> {
+    #[cfg(windows)]
+    {
+        let output = Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &format!("(Get-Process -Id {}).WorkingSet64", std::process::id())])
+            .output().map_err(|e| e.to_string())?;
+        return String::from_utf8_lossy(&output.stdout).trim().parse::<u64>().map_err(|e| e.to_string());
+    }
+    #[cfg(not(windows))]
+    {
     let pid = std::process::id().to_string();
     let output = Command::new("ps")
         .args(["-o", "rss=", "-p", &pid])
@@ -1544,6 +1633,7 @@ fn memory_usage() -> Result<u64, String> {
         .parse::<u64>()
         .map_err(|error| format!("invalid process memory value: {error}"))?;
     Ok(resident_kib.saturating_mul(1024))
+    }
 }
 
 fn now_rfc3339() -> String {
@@ -1598,6 +1688,7 @@ fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
 
 /// Directories that are never project source roots — skip immediately.
 fn artifact_scan_skip(name: &str) -> bool {
+    if cfg!(windows) && ["Windows", "Program Files", "Program Files (x86)", "ProgramData", "AppData", "$Recycle.Bin", "System Volume Information"].iter().any(|skip| name.eq_ignore_ascii_case(skip)) { return true; }
     matches!(
         name,
         ".git" | ".svn" | ".hg" | ".DS_Store" | ".Trash" | ".Spotlight-V100"
@@ -2132,4 +2223,40 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, cancel_project_scan, delete_artifacts, memory_usage])
         .run(tauri::generate_context!())
         .expect("error while running macOS Dev Cache Cleaner");
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn windows_targets_exclude_apple_locations() {
+        let targets = specs();
+        assert!(targets.iter().any(|s| s.id == "nuget-http-cache"));
+        assert!(targets.iter().any(|s| s.id == "cargo-registry-cache"));
+        for spec in targets {
+            if let TargetKind::Path { patterns } = spec.kind {
+                assert!(patterns.iter().all(|p| !p.contains("Library/") && !p.starts_with("/private/")));
+            }
+        }
+    }
+
+    #[test]
+    fn native_paths_and_home_are_supported() {
+        assert_eq!(normalize_path(r"D:\work\app"), "D:/work/app");
+        assert_eq!(normalize_path(r"\\server\share\app"), "//server/share/app");
+        assert_eq!(PathBuf::from(normalize_path(r"~\work")), dirs::home_dir().unwrap().join("work"));
+    }
+
+    #[test]
+    fn appdata_patterns_use_the_actual_environment() {
+        let mut warnings = Vec::new();
+        let paths = expand_special_pattern("%LOCALAPPDATA%/NuGet/v3-cache", &mut warnings);
+        if let Ok(base) = std::env::var("LOCALAPPDATA") {
+            assert_eq!(paths, vec![format!("{base}/NuGet/v3-cache")]);
+        } else {
+            assert!(paths.is_empty());
+            assert!(!warnings.is_empty());
+        }
+    }
 }
