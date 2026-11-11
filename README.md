@@ -10,7 +10,8 @@ The GUI currently provides two tabs:
 - **System Cache Cleaner** discovers known Homebrew, JetBrains, AI/LLM, Apple
   developer, Python, Node, Rust, Java/Android, Docker, Go, Ruby, Dart, PHP,
   Cloud/DevOps, and macOS log caches. It supports search, risk and category
-  filters, directory browsing, dry-run plans, safe-default selection, and
+  filters in three columns with cleanup options aligned beneath them, directory
+  browsing, dry-run plans, safe-default selection, and
   selective cleanup.
 - **Project Artifact Scanner** recursively scans a chosen root such as
   `~/Code` for supported build and dependency artifacts, reports project,

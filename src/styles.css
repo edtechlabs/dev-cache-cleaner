@@ -100,7 +100,9 @@ h2 { margin: 0; font-size: 16px; }
 .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ── Toolbar ── */
-.toolbar { margin-top: 14px; padding: 16px; display: grid; grid-template-columns: 1fr 140px 220px auto; gap: 14px; align-items: end; }
+.toolbar { margin-top: 14px; padding: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: end; }
+.toolbar > label { min-width: 0; }
+.toolbar > label input, .toolbar > label select { width: 100%; min-width: 0; box-sizing: border-box; }
 .toolbar label { display: grid; gap: 7px; color: #cbd5e1; font-size: 13px; }
 input, select {
   color: #f8fafc;
@@ -109,7 +111,7 @@ input, select {
   border-radius: 12px;
   padding: 10px 12px;
 }
-.checks { display: grid; grid-template-columns: repeat(3, max-content); gap: 14px; align-items: center; }
+.checks { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: center; }
 .checks label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 
 /* ── Stats ── */
@@ -333,8 +335,7 @@ code { display: block; word-break: break-all; color: #d1fae5; font-family: ui-mo
 .modal-confirm:not(:disabled):hover { background: #933232; }
 
 @media (max-width: 1200px) {
-  .hero, .toolbar { grid-template-columns: 1fr; display: grid; }
-  .checks { grid-template-columns: 1fr; }
+  .hero { grid-template-columns: 1fr; display: grid; }
   .stats { grid-template-columns: repeat(2, 1fr); }
   .main-grid { grid-template-columns: 1fr; }
   .tree-card { position: static; }
