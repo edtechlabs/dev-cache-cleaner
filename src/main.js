@@ -1094,25 +1094,27 @@ function renderArtifacts() {
 
   if (!scanState.report) {
     body.innerHTML = `<tr><td colspan="6" class="empty">Set a root directory and click Scan.</td></tr>`;
-    updateScanStats();
+    updateScanStats(items);
     return;
   }
   if (items.length === 0) {
     body.innerHTML = `<tr><td colspan="6" class="empty">No artifacts match the current filters.</td></tr>`;
-    updateScanStats();
+    updateScanStats(items);
     return;
   }
 
   body.innerHTML = items.map(renderArtifactRow).join('');
   updateArtifactSortIndicators();
-  updateScanStats();
+  updateScanStats(items);
 }
+
+const artifactDateFormatter = new Intl.DateTimeFormat('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 
 function renderArtifactRow(artifact) {
   const checked = scanState.selected.has(artifact.path) ? 'checked' : '';
   const relativePath = relativeArtifactPath(artifact.path, scanState.report.root);
   const modDate = artifact.modifiedSecs
-    ? new Date(artifact.modifiedSecs * 1000).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
+    ? artifactDateFormatter.format(new Date(artifact.modifiedSecs * 1000))
     : '—';
   const ageStr = artifact.modifiedSecs ? relativeAge(artifact.modifiedSecs) : '—';
   const cls    = artifact.modifiedSecs ? ageClass(artifact.modifiedSecs) : '';
@@ -1141,8 +1143,7 @@ function relativeArtifactPath(path, root) {
   return comparable.startsWith(windows ? prefix.toLowerCase() : prefix) ? path.slice(prefix.length) : path;
 }
 
-function updateScanStats() {
-  const items = filteredArtifacts();
+function updateScanStats(items = filteredArtifacts()) {
   const total = scanState.report?.totalBytes ?? 0;
   const artifacts = scanState.report?.artifactCount ?? 0;
   const projects  = scanState.report?.projectCount ?? 0;

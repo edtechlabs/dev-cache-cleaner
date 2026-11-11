@@ -1070,7 +1070,11 @@ fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
 }
 
 #[tauri::command]
-fn discover(options: DiscoverOptions) -> Result<DiscoverReport, String> {
+async fn discover(options: DiscoverOptions) -> Result<DiscoverReport, String> {
+    run_background(move || discover_impl(options)).await
+}
+
+fn discover_impl(options: DiscoverOptions) -> Result<DiscoverReport, String> {
     let include_missing = options.include_missing.unwrap_or(false);
     let mut items = Vec::new();
     let mut warnings = Vec::new();
@@ -1157,13 +1161,13 @@ fn discover(options: DiscoverOptions) -> Result<DiscoverReport, String> {
 }
 
 #[tauri::command]
-fn dry_run(request: CleanRequest) -> Result<PlanReport, String> {
-    plan_or_clean(request, true)
+async fn dry_run(request: CleanRequest) -> Result<PlanReport, String> {
+    run_background(move || plan_or_clean(request, true)).await
 }
 
 #[tauri::command]
-fn clean(request: CleanRequest) -> Result<PlanReport, String> {
-    plan_or_clean(request, false)
+async fn clean(request: CleanRequest) -> Result<PlanReport, String> {
+    run_background(move || plan_or_clean(request, false)).await
 }
 
 fn plan_or_clean(request: CleanRequest, dry: bool) -> Result<PlanReport, String> {
@@ -1644,23 +1648,36 @@ fn command_stdout(executable: &str, args: &[&str]) -> Result<String, String> {
     }
 }
 
+// Filesystem walks and child processes must never execute on the window thread.
+async fn run_background<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|error| format!("Background worker failed: {error}"))?
+}
+
 #[tauri::command]
-fn memory_usage() -> Result<u64, String> {
+async fn memory_usage() -> Result<u64, String> {
+    run_background(read_memory_usage).await
+}
+
+fn read_memory_usage() -> Result<u64, String> {
     #[cfg(windows)]
     {
-        let output = Command::new("powershell.exe")
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                &format!("(Get-Process -Id {}).WorkingSet64", std::process::id()),
-            ])
-            .output()
-            .map_err(|e| e.to_string())?;
-        return String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .parse::<u64>()
-            .map_err(|e| e.to_string());
+        use windows_sys::Win32::System::{
+            ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS},
+            Threading::GetCurrentProcess,
+        };
+        let mut counters: PROCESS_MEMORY_COUNTERS = unsafe { std::mem::zeroed() };
+        let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+        counters.cb = size;
+        // The pseudo-handle is valid for this process; counters is writable for size bytes.
+        let success = unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) };
+        if success == 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        Ok(counters.WorkingSetSize as u64)
     }
     #[cfg(not(windows))]
     {
@@ -1696,7 +1713,11 @@ fn system_time_to_rfc3339(t: SystemTime) -> Option<String> {
 }
 
 #[tauri::command]
-fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
+async fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
+    run_background(move || list_path_impl(path)).await
+}
+
+fn list_path_impl(path: String) -> Result<Vec<TreeNode>, String> {
     let p = PathBuf::from(&path);
     if !p.exists() {
         return Ok(vec![]);
@@ -2321,7 +2342,7 @@ fn delete_artifacts_impl(
 // ── Public API (used by the CLI binary) ──────────────────────────────────────
 
 pub fn run_discover(options: DiscoverOptions) -> Result<DiscoverReport, String> {
-    discover(options)
+    discover_impl(options)
 }
 
 pub fn run_dry_run(request: CleanRequest) -> Result<PlanReport, String> {
@@ -2333,7 +2354,7 @@ pub fn run_clean(request: CleanRequest) -> Result<PlanReport, String> {
 }
 
 pub fn run_list_path(path: String) -> Result<Vec<TreeNode>, String> {
-    list_path(path)
+    list_path_impl(path)
 }
 
 pub fn run_scan_projects(options: ProjectScanOptions) -> Result<ProjectScanReport, String> {
@@ -2364,6 +2385,53 @@ pub fn run() {
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
+
+    #[test]
+    fn background_work_runs_off_the_caller_thread() {
+        let caller = std::thread::current().id();
+        let worker =
+            tauri::async_runtime::block_on(run_background(|| Ok(std::thread::current().id())))
+                .unwrap();
+        assert_ne!(caller, worker);
+        let failure = tauri::async_runtime::block_on(run_background(|| {
+            Err::<(), _>("probe failure".to_string())
+        }));
+        assert_eq!(failure.unwrap_err(), "probe failure");
+    }
+
+    #[test]
+    fn native_memory_poll_returns_working_set_bytes() {
+        assert!(read_memory_usage().unwrap() > 0);
+        assert!(tauri::async_runtime::block_on(memory_usage()).unwrap() > 0);
+    }
+
+    #[test]
+    #[ignore = "manual before/after timing; starts PowerShell seven times"]
+    fn profile_memory_poll() {
+        use std::time::Instant;
+        let mut old_ms = Vec::new();
+        for _ in 0..7 {
+            let start = Instant::now();
+            let output = Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    &format!("(Get-Process -Id {}).WorkingSet64", std::process::id()),
+                ])
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            old_ms.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        let start = Instant::now();
+        for _ in 0..10_000 {
+            assert!(read_memory_usage().unwrap() > 0);
+        }
+        let native_us = start.elapsed().as_secs_f64() * 1_000_000.0 / 10_000.0;
+        println!("PowerShell milliseconds per poll: {old_ms:?}");
+        println!("Native microseconds per poll (10000 samples): {native_us:.3}");
+    }
 
     #[test]
     fn windows_targets_exclude_apple_locations() {

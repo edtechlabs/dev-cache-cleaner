@@ -516,3 +516,7 @@ large PDB files within MSVC linker limits while retaining backtrace locations.
 The application is named **Dev Cache Cleaner** on every platform. The Windows
 executable is `src-tauri/target/release/dev-cache-cleaner.exe`; `run_app.bat`
 launches it. Rebuild with `build_app.bat` when updating an older checkout.
+
+Windows memory polling uses the native API, and filesystem scans, cleanup, and
+tree sizing run on background workers to keep the window responsive. See
+[PERFORMANCE.md](PERFORMANCE.md) for measurements and the Windows profiling script.

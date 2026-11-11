@@ -29,6 +29,9 @@ trash = "5"
 walkdir = "2"
 which = "7"
 
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading"] }
+
 [profile.release]
 codegen-units = 1
 lto = true
