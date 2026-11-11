@@ -461,17 +461,37 @@ After editing, run `./run_dev.sh` — the Rust backend recompiles automatically.
 ## Windows development and builds
 
 Windows 10/11 is supported using the native Tauri runner. Install Node.js LTS,
-Rust with the MSVC toolchain, Visual Studio Build Tools with **Desktop development
-with C++** (including the Windows SDK), and Microsoft Edge WebView2 Runtime.
-Open Developer PowerShell for Visual Studio in this repository:
+Visual Studio Build Tools with **Desktop development with C++** (including the
+Windows SDK), and Microsoft Edge WebView2 Runtime. From a regular terminal in
+this repository:
 
 ```powershell
-.\run_dev.cmd
+# Download isolated Rust/Cargo, rustfmt, Clippy, and npm dependencies:
+.\setup_dev.bat
+# Run the development app:
+.\run_dev.bat
 # Build the executable and Windows installers:
-.\build_app.cmd
+.\build_app.bat
+# Launch the built app (builds first if missing):
+.\run_app.bat
 ```
 
-PowerShell entry points `run_dev.ps1` and `build_app.ps1` are also available.
+PowerShell and `.cmd` entry points are also available. `setup_dev.bat` is safe to
+rerun. Rustup, toolchains, and Cargo caches live in the ignored `.tools/` folder;
+setup does not change your user PATH or use your global Rust installation. The
+runners activate this local installation and detect the Visual Studio C++
+environment automatically. Node.js, Visual Studio, and WebView2 remain system
+prerequisites.
+
+For manual checks in PowerShell, activate the environment for the current shell:
+
+```powershell
+. .\dev_env.ps1
+npm run check:rust
+npm run fmt:rust -- --check
+cargo test --manifest-path src-tauri/Cargo.toml --lib
+```
+
 The runners check prerequisites and install locked npm dependencies when needed.
 Bundles are written to `src-tauri/target/release/bundle`; the CLI can be built with
 `cargo build --manifest-path src-tauri/Cargo.toml --bin cache-cleaner --release`.
@@ -489,3 +509,6 @@ cleaning locked caches. Windows system folders and AppData are skipped by the
 project scanner, while dedicated cache discovery still checks its known paths.
 The CLI `permissions` and LaunchAgent `service` commands apply only to macOS;
 use Windows Task Scheduler for scheduled CLI cleanup.
+
+Windows development builds use line-table debug information to keep Tauri's
+large PDB files within MSVC linker limits while retaining backtrace locations.

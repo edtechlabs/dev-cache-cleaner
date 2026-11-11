@@ -27,3 +27,6 @@ tasks/
 
 # Rust tooling output
 **/target/
+
+# Project-scoped Rust toolchain and downloads
+.tools/

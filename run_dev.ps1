@@ -1,12 +1,10 @@
 param([switch]$Build)
 $ErrorActionPreference = 'Stop'
 Set-Location -LiteralPath $PSScriptRoot
-# Rust installed by rustup may not be in an already-open terminal's PATH.
-$rustBin = Join-Path $env:USERPROFILE '.cargo\bin'
-if (Test-Path -LiteralPath $rustBin) { $env:PATH = "$rustBin;$env:PATH" }
+. (Join-Path $PSScriptRoot 'dev_env.ps1')
 foreach ($tool in @('node', 'npm.cmd', 'cargo', 'cl.exe')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        throw "Missing $tool. Install Node.js LTS, Rust (MSVC), and Visual Studio Build Tools with Desktop development with C++. Run from Developer PowerShell for Visual Studio. WebView2 Runtime is also required."
+        throw "Missing $tool. Run setup_dev.bat first. Node.js, Visual Studio C++ Build Tools, and WebView2 Runtime are required."
     }
 }
 if (-not (Test-Path -LiteralPath 'node_modules')) {

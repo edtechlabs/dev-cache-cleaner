@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use macos_dev_cache_cleaner_lib::{
-    run_clean, run_discover, run_dry_run, CacheItem, CleanRequest, DiscoverOptions,
-    DiscoverReport, PlanReport, Risk,
+    run_clean, run_discover, run_dry_run, CacheItem, CleanRequest, DiscoverOptions, DiscoverReport,
+    PlanReport, Risk,
 };
 use std::collections::HashSet;
 use std::io::{self, Write};
@@ -10,7 +10,10 @@ use std::path::PathBuf;
 // ── permission helpers ────────────────────────────────────────────────────────
 
 fn is_permission_error(e: &str) -> bool {
-    e.contains("Permission denied") || e.contains("Operation not permitted") || e.contains("(os error 1)") || e.contains("(os error 13)")
+    e.contains("Permission denied")
+        || e.contains("Operation not permitted")
+        || e.contains("(os error 1)")
+        || e.contains("(os error 13)")
 }
 
 fn permission_hint() {
@@ -41,7 +44,11 @@ fn main() {
 struct Cli {
     #[command(subcommand)]
     command: Option<Cmd>,
-    #[arg(long, global = true, help = "Output as JSON instead of human-readable text")]
+    #[arg(
+        long,
+        global = true,
+        help = "Output as JSON instead of human-readable text"
+    )]
     json: bool,
 }
 
@@ -104,7 +111,10 @@ struct Selection {
                 Repeat the flag or separate with commas: --ids npm-cache,pip-cache"
     )]
     ids: Option<Vec<String>>,
-    #[arg(long, help = "Select default-safe targets (used when no other selection flag is given)")]
+    #[arg(
+        long,
+        help = "Select default-safe targets (used when no other selection flag is given)"
+    )]
     defaults: bool,
     #[arg(long, help = "Select every known target")]
     all: bool,
@@ -121,9 +131,15 @@ struct Selection {
 struct CleanOpts {
     #[arg(long, help = "Permanently delete instead of moving to Trash")]
     permanent: bool,
-    #[arg(long, help = "Allow external command targets (brew, docker, pnpm, go …)")]
+    #[arg(
+        long,
+        help = "Allow external command targets (brew, docker, pnpm, go …)"
+    )]
     allow_commands: bool,
-    #[arg(long, help = "Include high-risk targets (model stores, simulator devices, device backups …)")]
+    #[arg(
+        long,
+        help = "Include high-risk targets (model stores, simulator devices, device backups …)"
+    )]
     include_high_risk: bool,
 }
 
@@ -131,13 +147,24 @@ struct CleanOpts {
 enum ServiceAction {
     /// Install and activate the LaunchAgent (creates ~/Library/LaunchAgents plist)
     Install {
-        #[arg(long, short = 's', value_enum, default_value = "weekly",
-               help = "How often to run")]
+        #[arg(
+            long,
+            short = 's',
+            value_enum,
+            default_value = "weekly",
+            help = "How often to run"
+        )]
         schedule: ScheduleArg,
-        #[arg(long, default_value = "3",
-               help = "Hour of day to run (0–23, local time)")]
+        #[arg(
+            long,
+            default_value = "3",
+            help = "Hour of day to run (0–23, local time)"
+        )]
         hour: u8,
-        #[arg(long, help = "Path to the cache-cleaner binary [default: current executable]")]
+        #[arg(
+            long,
+            help = "Path to the cache-cleaner binary [default: current executable]"
+        )]
         bin: Option<PathBuf>,
         #[arg(long, help = "Permanently delete instead of moving to Trash")]
         permanent: bool,
@@ -151,7 +178,10 @@ enum ServiceAction {
 }
 
 #[derive(ValueEnum, Clone, Copy)]
-enum ScheduleArg { Daily, Weekly }
+enum ScheduleArg {
+    Daily,
+    Weekly,
+}
 
 #[derive(ValueEnum, Clone)]
 enum RiskArg {
@@ -163,11 +193,17 @@ enum RiskArg {
 // ── dispatch ──────────────────────────────────────────────────────────────────
 
 fn run(cli: Cli) -> Result<(), String> {
-    match cli.command.unwrap_or(Cmd::Scan { include_missing: false }) {
+    match cli.command.unwrap_or(Cmd::Scan {
+        include_missing: false,
+    }) {
         Cmd::Scan { include_missing } => cmd_scan(include_missing, cli.json),
         Cmd::List { category, risk } => cmd_list(category, risk, cli.json),
         Cmd::DryRun { selection, opts } => cmd_dry_run(selection, opts, cli.json),
-        Cmd::Clean { selection, opts, yes } => cmd_clean(selection, opts, yes, cli.json),
+        Cmd::Clean {
+            selection,
+            opts,
+            yes,
+        } => cmd_clean(selection, opts, yes, cli.json),
         Cmd::Permissions { open } => cmd_permissions(open),
         Cmd::Service { action } => cmd_service(action),
     }
@@ -208,9 +244,9 @@ fn cmd_list(category: Option<String>, risk: Option<RiskArg>, json: bool) -> Resu
         .items
         .iter()
         .filter(|i| {
-            let cat_ok = category
-                .as_ref()
-                .map_or(true, |c| i.category.to_lowercase().contains(&c.to_lowercase()));
+            let cat_ok = category.as_ref().map_or(true, |c| {
+                i.category.to_lowercase().contains(&c.to_lowercase())
+            });
             let risk_ok = risk.as_ref().map_or(true, |r| match r {
                 RiskArg::Low => i.risk == Risk::Low,
                 RiskArg::Medium => i.risk == Risk::Medium,
@@ -315,10 +351,10 @@ fn cmd_clean(sel: Selection, opts: CleanOpts, yes: bool, json: bool) -> Result<(
         return Ok(());
     }
 
-    let has_perm_errors = plan.actions.iter().any(|a| {
-        a.status == "error"
-            && a.output.as_deref().map_or(false, is_permission_error)
-    });
+    let has_perm_errors = plan
+        .actions
+        .iter()
+        .any(|a| a.status == "error" && a.output.as_deref().map_or(false, is_permission_error));
     print_plan(&plan);
     if has_perm_errors {
         permission_hint();
@@ -392,15 +428,17 @@ fn build_request(selected_ids: Vec<String>, opts: &CleanOpts) -> CleanRequest {
 /// Directories that require Full Disk Access on macOS.
 /// Each entry is (display_name, path_relative_to_home).
 const FDA_PROBES: &[(&str, &str)] = &[
-    ("Library/Application Support",   "Library/Application Support"),
-    ("Library/Containers",            "Library/Containers"),
-    ("Library/Caches",                "Library/Caches"),
-    ("Library/Logs",                  "Library/Logs"),
-    ("Library/Developer",             "Library/Developer"),
+    ("Library/Application Support", "Library/Application Support"),
+    ("Library/Containers", "Library/Containers"),
+    ("Library/Caches", "Library/Caches"),
+    ("Library/Logs", "Library/Logs"),
+    ("Library/Developer", "Library/Developer"),
 ];
 
 fn cmd_permissions(open_settings: bool) -> Result<(), String> {
-    if !cfg!(target_os = "macos") { return Err("Full Disk Access settings apply only to macOS. On Windows, close running developer tools and check folder permissions.".into()); }
+    if !cfg!(target_os = "macos") {
+        return Err("Full Disk Access settings apply only to macOS. On Windows, close running developer tools and check folder permissions.".into());
+    }
     let home = dirs::home_dir().ok_or("Cannot determine home directory")?;
 
     println!("macOS Full Disk Access — permission check");
@@ -479,23 +517,36 @@ fn open_fda_settings() {
 // ── service management ────────────────────────────────────────────────────────
 
 const PLIST_LABEL: &str = "com.macos-dev-cache-cleaner.autorun";
-const PLIST_FILE:  &str = "com.macos-dev-cache-cleaner.plist";
-const LOG_FILE:    &str = "dev-cache-cleaner-autorun.log";
+const PLIST_FILE: &str = "com.macos-dev-cache-cleaner.plist";
+const LOG_FILE: &str = "dev-cache-cleaner-autorun.log";
 
 fn plist_path() -> PathBuf {
-    dirs::home_dir().unwrap().join("Library/LaunchAgents").join(PLIST_FILE)
+    dirs::home_dir()
+        .unwrap()
+        .join("Library/LaunchAgents")
+        .join(PLIST_FILE)
 }
 fn log_path() -> PathBuf {
-    dirs::home_dir().unwrap().join("Library/Logs").join(LOG_FILE)
+    dirs::home_dir()
+        .unwrap()
+        .join("Library/Logs")
+        .join(LOG_FILE)
 }
 
 fn cmd_service(action: ServiceAction) -> Result<(), String> {
-    if !cfg!(target_os = "macos") { return Err("LaunchAgent services are macOS-only. On Windows, schedule cache-cleaner.exe with Task Scheduler.".into()); }
+    if !cfg!(target_os = "macos") {
+        return Err("LaunchAgent services are macOS-only. On Windows, schedule cache-cleaner.exe with Task Scheduler.".into());
+    }
     match action {
-        ServiceAction::Install { schedule, hour, bin, permanent, allow_commands } =>
-            svc_install(schedule, hour, bin, permanent, allow_commands),
+        ServiceAction::Install {
+            schedule,
+            hour,
+            bin,
+            permanent,
+            allow_commands,
+        } => svc_install(schedule, hour, bin, permanent, allow_commands),
         ServiceAction::Uninstall => svc_uninstall(),
-        ServiceAction::Status    => svc_status(),
+        ServiceAction::Status => svc_status(),
     }
 }
 
@@ -506,7 +557,9 @@ fn svc_install(
     permanent: bool,
     allow_commands: bool,
 ) -> Result<(), String> {
-    if hour > 23 { return Err("--hour must be 0–23".into()); }
+    if hour > 23 {
+        return Err("--hour must be 0–23".into());
+    }
 
     let bin_path = bin
         .map(|p| p.canonicalize().unwrap_or(p))
@@ -518,7 +571,7 @@ fn svc_install(
     }
 
     let plist = plist_path();
-    let log   = log_path();
+    let log = log_path();
 
     // Warn if binary is inside a build dir (not a permanent install location)
     let bin_str = bin_path.to_string_lossy();
@@ -529,10 +582,15 @@ fn svc_install(
     }
 
     let mut args: Vec<&str> = vec!["clean", "--defaults", "--yes"];
-    if permanent      { args.push("--permanent"); }
-    if allow_commands { args.push("--allow-commands"); }
+    if permanent {
+        args.push("--permanent");
+    }
+    if allow_commands {
+        args.push("--allow-commands");
+    }
 
-    let args_xml: String = args.iter()
+    let args_xml: String = args
+        .iter()
         .map(|a| format!("        <string>{}</string>", xml_escape(a)))
         .collect::<Vec<_>>()
         .join("\n");
@@ -547,7 +605,7 @@ fn svc_install(
     };
 
     let plist_xml = format!(
-r#"<?xml version="1.0" encoding="UTF-8"?>
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -569,11 +627,11 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
 </dict>
 </plist>
 "#,
-        label    = PLIST_LABEL,
-        bin      = xml_escape(&bin_path.to_string_lossy()),
-        args     = args_xml,
+        label = PLIST_LABEL,
+        bin = xml_escape(&bin_path.to_string_lossy()),
+        args = args_xml,
         calendar = calendar,
-        log      = xml_escape(&log.to_string_lossy()),
+        log = xml_escape(&log.to_string_lossy()),
     );
 
     // Unload existing service before overwriting
@@ -584,8 +642,7 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
         println!("Replaced existing service.");
     }
 
-    std::fs::write(&plist, &plist_xml)
-        .map_err(|e| format!("Failed to write plist: {e}"))?;
+    std::fs::write(&plist, &plist_xml).map_err(|e| format!("Failed to write plist: {e}"))?;
 
     let out = std::process::Command::new("launchctl")
         .args(["load", "-w", &plist.to_string_lossy()])
@@ -598,7 +655,7 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
     }
 
     let sched_str = match schedule {
-        ScheduleArg::Daily  => format!("daily at {:02}:00", hour),
+        ScheduleArg::Daily => format!("daily at {:02}:00", hour),
         ScheduleArg::Weekly => format!("weekly (Sundays) at {:02}:00", hour),
     };
 
@@ -607,7 +664,14 @@ r#"<?xml version="1.0" encoding="UTF-8"?>
     println!("  Binary   : {}", bin_path.display());
     println!("  Plist    : {}", plist.display());
     println!("  Log      : {}", log.display());
-    println!("  Mode     : {}", if permanent { "permanent delete" } else { "move to Trash" });
+    println!(
+        "  Mode     : {}",
+        if permanent {
+            "permanent delete"
+        } else {
+            "move to Trash"
+        }
+    );
     println!();
     println!("To stop:   cache-cleaner service uninstall");
     println!("To check:  cache-cleaner service status");
@@ -625,7 +689,10 @@ fn svc_uninstall() -> Result<(), String> {
         .output()
         .map_err(|e| format!("Failed to run launchctl: {e}"))?;
     if !out.status.success() {
-        eprintln!("Warning: launchctl unload: {}", String::from_utf8_lossy(&out.stderr).trim());
+        eprintln!(
+            "Warning: launchctl unload: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
     }
     std::fs::remove_file(&plist).map_err(|e| format!("Failed to remove plist: {e}"))?;
     println!("Service removed: {}", plist.display());
@@ -668,7 +735,9 @@ fn svc_status() -> Result<(), String> {
             let tail = &lines[lines.len().saturating_sub(12)..];
             if !tail.is_empty() {
                 println!("\nLast log entries:");
-                for l in tail { println!("  {}", l); }
+                for l in tail {
+                    println!("  {}", l);
+                }
             }
         }
     } else {
@@ -678,7 +747,10 @@ fn svc_status() -> Result<(), String> {
 }
 
 fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 // ── output ────────────────────────────────────────────────────────────────────

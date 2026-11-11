@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::SystemTime;
 use tauri::{AppHandle, Emitter};
 use walkdir::WalkDir;
@@ -24,7 +24,9 @@ pub enum Risk {
 
 #[derive(Debug, Clone)]
 enum TargetKind {
-    Path { patterns: Vec<&'static str> },
+    Path {
+        patterns: Vec<&'static str>,
+    },
     Command {
         executable: &'static str,
         dry_args: Vec<&'static str>,
@@ -160,7 +162,9 @@ pub struct ArtifactRule {
     pub url: Option<String>,
 }
 
-fn default_rule_enabled() -> bool { true }
+fn default_rule_enabled() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -199,8 +203,14 @@ struct ProjectArtifactBatch {
 }
 
 enum ArtifactSizingEvent {
-    Progress { path: String, files_scanned: u64 },
-    Complete { index: usize, artifact: Option<ProjectArtifact> },
+    Progress {
+        path: String,
+        files_scanned: u64,
+    },
+    Complete {
+        index: usize,
+        artifact: Option<ProjectArtifact>,
+    },
 }
 
 fn emit_project_progress(app: Option<&AppHandle>, progress: ProjectProgress) {
@@ -250,9 +260,13 @@ struct PathStats {
 fn specs() -> Vec<TargetSpec> {
     let specs = base_specs();
     #[cfg(windows)]
-    { windows_specs(specs) }
+    {
+        windows_specs(specs)
+    }
     #[cfg(not(windows))]
-    { specs }
+    {
+        specs
+    }
 }
 
 fn base_specs() -> Vec<TargetSpec> {
@@ -1002,7 +1016,10 @@ fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
             "cursor-logs" => Some(vec!["%APPDATA%/Cursor/logs"]),
             "cursor-workspace-storage" => Some(vec!["%APPDATA%/Cursor/User/workspaceStorage"]),
             "composer-cache" => Some(vec!["%LOCALAPPDATA%/Composer"]),
-            "ollama-logs" => Some(vec!["%LOCALAPPDATA%/Ollama/server.log", "%LOCALAPPDATA%/Ollama/app.log"]),
+            "ollama-logs" => Some(vec![
+                "%LOCALAPPDATA%/Ollama/server.log",
+                "%LOCALAPPDATA%/Ollama/app.log",
+            ]),
             _ => None,
         };
         if let Some(patterns) = replacement {
@@ -1010,26 +1027,44 @@ fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
         } else {
             match &mut spec.kind {
                 TargetKind::Path { patterns } => {
-                    patterns.retain(|p| !p.contains("Library/") && !p.starts_with("/private/") && *p != "$BREW_CACHE");
-                    if patterns.is_empty() { continue; }
+                    patterns.retain(|p| {
+                        !p.contains("Library/")
+                            && !p.starts_with("/private/")
+                            && *p != "$BREW_CACHE"
+                    });
+                    if patterns.is_empty() {
+                        continue;
+                    }
                 }
-                TargetKind::Command { executable: "brew", .. } => continue,
+                TargetKind::Command {
+                    executable: "brew", ..
+                } => continue,
                 _ => {}
             }
         }
         result.push(spec);
     }
     result.push(TargetSpec {
-        id: "nuget-http-cache", label: "NuGet HTTP cache", category: ".NET",
-        risk: Risk::Low, default_selected: true,
+        id: "nuget-http-cache",
+        label: "NuGet HTTP cache",
+        category: ".NET",
+        risk: Risk::Low,
+        default_selected: true,
         note: "Downloaded NuGet HTTP responses; recreated on restore.",
-        kind: TargetKind::Path { patterns: vec!["%LOCALAPPDATA%/NuGet/v3-cache"] },
+        kind: TargetKind::Path {
+            patterns: vec!["%LOCALAPPDATA%/NuGet/v3-cache"],
+        },
     });
     result.push(TargetSpec {
-        id: "nuget-packages", label: "NuGet global packages", category: ".NET",
-        risk: Risk::Medium, default_selected: false,
+        id: "nuget-packages",
+        label: "NuGet global packages",
+        category: ".NET",
+        risk: Risk::Medium,
+        default_selected: false,
         note: "Packages must be downloaded again on restore. Close builds before cleaning.",
-        kind: TargetKind::Path { patterns: vec!["~/.nuget/packages"] },
+        kind: TargetKind::Path {
+            patterns: vec!["~/.nuget/packages"],
+        },
     });
     result
 }
@@ -1401,10 +1436,15 @@ fn remove_path(path: &Path, permanent: bool) -> Result<String, String> {
             Err(e) => {
                 let msg = e.to_string();
                 // Finder is not running (SSH / headless session) — fall back to permanent delete.
-                if msg.contains("isn't running") || msg.contains("Application isn't running") || msg.contains("-600") {
-                    let metadata = fs::symlink_metadata(path).map_err(|e| format!("metadata error: {e}"))?;
+                if msg.contains("isn't running")
+                    || msg.contains("Application isn't running")
+                    || msg.contains("-600")
+                {
+                    let metadata =
+                        fs::symlink_metadata(path).map_err(|e| format!("metadata error: {e}"))?;
                     if metadata.is_dir() {
-                        fs::remove_dir_all(path).map_err(|e| format!("remove_dir_all error: {e}"))?;
+                        fs::remove_dir_all(path)
+                            .map_err(|e| format!("remove_dir_all error: {e}"))?;
                     } else {
                         fs::remove_file(path).map_err(|e| format!("remove_file error: {e}"))?;
                     }
@@ -1433,7 +1473,9 @@ fn expand_patterns(patterns: &[&'static str], warnings: &mut Vec<String>) -> Vec
                             }
                         }
                     }
-                    Err(e) => warnings.push(format!("Invalid glob pattern '{}': {}", normalized, e)),
+                    Err(e) => {
+                        warnings.push(format!("Invalid glob pattern '{}': {}", normalized, e))
+                    }
                 }
             } else if seen.insert(PathBuf::from(&normalized)) {
                 paths.push(PathBuf::from(normalized));
@@ -1449,7 +1491,10 @@ fn expand_special_pattern(pattern: &str, warnings: &mut Vec<String>) -> Vec<Stri
         if let Some((name, suffix)) = rest.split_once('%') {
             return match std::env::var(name) {
                 Ok(value) if !value.is_empty() => vec![format!("{value}{suffix}")],
-                _ => { warnings.push(format!("Environment variable {name} is unavailable")); Vec::new() }
+                _ => {
+                    warnings.push(format!("Environment variable {name} is unavailable"));
+                    Vec::new()
+                }
             };
         }
     }
@@ -1583,11 +1628,7 @@ fn run_command(executable: &str, args: &[&str]) -> Result<String, String> {
     if output.status.success() {
         Ok(text.trim().to_string())
     } else {
-        Err(format!(
-            "exit status {}\n{}",
-            output.status,
-            text.trim()
-        ))
+        Err(format!("exit status {}\n{}", output.status, text.trim()))
     }
 }
 
@@ -1608,31 +1649,40 @@ fn memory_usage() -> Result<u64, String> {
     #[cfg(windows)]
     {
         let output = Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &format!("(Get-Process -Id {}).WorkingSet64", std::process::id())])
-            .output().map_err(|e| e.to_string())?;
-        return String::from_utf8_lossy(&output.stdout).trim().parse::<u64>().map_err(|e| e.to_string());
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!("(Get-Process -Id {}).WorkingSet64", std::process::id()),
+            ])
+            .output()
+            .map_err(|e| e.to_string())?;
+        return String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse::<u64>()
+            .map_err(|e| e.to_string());
     }
     #[cfg(not(windows))]
     {
-    let pid = std::process::id().to_string();
-    let output = Command::new("ps")
-        .args(["-o", "rss=", "-p", &pid])
-        .output()
-        .map_err(|error| format!("failed to read process memory: {error}"))?;
+        let pid = std::process::id().to_string();
+        let output = Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid])
+            .output()
+            .map_err(|error| format!("failed to read process memory: {error}"))?;
 
-    if !output.status.success() {
-        return Err(format!(
-            "ps exited with {}: {}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
+        if !output.status.success() {
+            return Err(format!(
+                "ps exited with {}: {}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+        }
 
-    let resident_kib = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u64>()
-        .map_err(|error| format!("invalid process memory value: {error}"))?;
-    Ok(resident_kib.saturating_mul(1024))
+        let resident_kib = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .parse::<u64>()
+            .map_err(|error| format!("invalid process memory value: {error}"))?;
+        Ok(resident_kib.saturating_mul(1024))
     }
 }
 
@@ -1653,8 +1703,17 @@ fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
     }
     let meta = fs::symlink_metadata(&p).map_err(|e| e.to_string())?;
     if !meta.is_dir() {
-        let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        return Ok(vec![TreeNode { name, path, is_dir: false, size_bytes: meta.len(), entry_count: 0 }]);
+        let name = p
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        return Ok(vec![TreeNode {
+            name,
+            path,
+            is_dir: false,
+            size_bytes: meta.len(),
+            entry_count: 0,
+        }]);
     }
     let mut nodes: Vec<TreeNode> = fs::read_dir(&p)
         .map_err(|e| e.to_string())?
@@ -1673,7 +1732,13 @@ fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
                     entry_count: stats.file_count + stats.dir_count,
                 })
             } else if meta.is_file() || meta.file_type().is_symlink() {
-                Some(TreeNode { name, path: child.display().to_string(), is_dir: false, size_bytes: meta.len(), entry_count: 0 })
+                Some(TreeNode {
+                    name,
+                    path: child.display().to_string(),
+                    is_dir: false,
+                    size_bytes: meta.len(),
+                    entry_count: 0,
+                })
             } else {
                 None
             }
@@ -1688,20 +1753,56 @@ fn list_path(path: String) -> Result<Vec<TreeNode>, String> {
 
 /// Directories that are never project source roots — skip immediately.
 fn artifact_scan_skip(name: &str) -> bool {
-    if cfg!(windows) && ["Windows", "Program Files", "Program Files (x86)", "ProgramData", "AppData", "$Recycle.Bin", "System Volume Information"].iter().any(|skip| name.eq_ignore_ascii_case(skip)) { return true; }
+    if cfg!(windows)
+        && [
+            "Windows",
+            "Program Files",
+            "Program Files (x86)",
+            "ProgramData",
+            "AppData",
+            "$Recycle.Bin",
+            "System Volume Information",
+        ]
+        .iter()
+        .any(|skip| name.eq_ignore_ascii_case(skip))
+    {
+        return true;
+    }
     matches!(
         name,
-        ".git" | ".svn" | ".hg" | ".DS_Store" | ".Trash" | ".Spotlight-V100"
-            | ".fseventsd" | ".DocumentRevisions-V100" | ".TemporaryItems"
-            | "Library" | "System" | "Applications" | "Volumes" | "private"
-            | "usr" | "bin" | "sbin" | "etc" | "var" | "tmp"
+        ".git"
+            | ".svn"
+            | ".hg"
+            | ".DS_Store"
+            | ".Trash"
+            | ".Spotlight-V100"
+            | ".fseventsd"
+            | ".DocumentRevisions-V100"
+            | ".TemporaryItems"
+            | "Library"
+            | "System"
+            | "Applications"
+            | "Volumes"
+            | "private"
+            | "usr"
+            | "bin"
+            | "sbin"
+            | "etc"
+            | "var"
+            | "tmp"
     )
 }
 
-fn detect_configured_artifact_kind(name: &str, path: &Path, rules: &[ArtifactRule]) -> Option<String> {
+fn detect_configured_artifact_kind(
+    name: &str,
+    path: &Path,
+    rules: &[ArtifactRule],
+) -> Option<String> {
     let parent = path.parent().unwrap_or(path);
     rules.iter().find_map(|rule| {
-        if !rule.enabled || rule.directory_name != name { return None; }
+        if !rule.enabled || rule.directory_name != name {
+            return None;
+        }
         if !rule.locations.is_empty()
             && !rule.locations.iter().any(|location| {
                 location == "any" || (location == "android" && is_android_project_path(path))
@@ -1709,15 +1810,26 @@ fn detect_configured_artifact_kind(name: &str, path: &Path, rules: &[ArtifactRul
         {
             return None;
         }
-        if rule.requires_outside.iter().any(|required| !parent.join(required).exists()) {
-            return None;
-        }
-        if !rule.requires_outside_any.is_empty()
-            && !rule.requires_outside_any.iter().any(|required| parent.join(required).exists())
+        if rule
+            .requires_outside
+            .iter()
+            .any(|required| !parent.join(required).exists())
         {
             return None;
         }
-        if rule.requires_inside.iter().any(|required| !path.join(required).exists()) {
+        if !rule.requires_outside_any.is_empty()
+            && !rule
+                .requires_outside_any
+                .iter()
+                .any(|required| parent.join(required).exists())
+        {
+            return None;
+        }
+        if rule
+            .requires_inside
+            .iter()
+            .any(|required| !path.join(required).exists())
+        {
             return None;
         }
         Some(rule.artifact_kind.clone())
@@ -1730,26 +1842,27 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
     match name {
         // Node / JS
         "node_modules" => Some("Node.js deps"),
-        ".turbo"        => Some("Turborepo cache"),
-        ".next"   if p.join("package.json").exists() => Some("Next.js build"),
-        ".nuxt"   if p.join("package.json").exists() => Some("Nuxt build"),
+        ".turbo" => Some("Turborepo cache"),
+        ".next" if p.join("package.json").exists() => Some("Next.js build"),
+        ".nuxt" if p.join("package.json").exists() => Some("Nuxt build"),
         ".svelte-kit" if p.join("package.json").exists() => Some("SvelteKit build"),
         ".angular" if p.join("package.json").exists() => Some("Angular cache"),
         ".parcel-cache" => Some("Parcel cache"),
         // Python
         ".venv" | "venv" => Some("Python venv"),
-        "__pycache__"    => Some("Python bytecode"),
-        ".pytest_cache"  => Some("pytest cache"),
-        ".mypy_cache"    => Some("mypy cache"),
-        ".ruff_cache"    => Some("Ruff cache"),
-        ".tox"           => Some("tox"),
-        ".nox"           => Some("nox"),
+        "__pycache__" => Some("Python bytecode"),
+        ".pytest_cache" => Some("pytest cache"),
+        ".mypy_cache" => Some("mypy cache"),
+        ".ruff_cache" => Some("Ruff cache"),
+        ".tox" => Some("tox"),
+        ".nox" => Some("nox"),
         // Rust
         "target" if p.join("Cargo.toml").exists() => Some("Rust build"),
         // JVM
-        "target" if p.join("pom.xml").exists()         => Some("Maven build"),
-        "target" if p.join("build.gradle").exists()
-                  || p.join("build.gradle.kts").exists() => Some("Gradle build"),
+        "target" if p.join("pom.xml").exists() => Some("Maven build"),
+        "target" if p.join("build.gradle").exists() || p.join("build.gradle.kts").exists() => {
+            Some("Gradle build")
+        }
         ".gradle" if is_android_project_path(path) => Some("Android Gradle cache"),
         ".gradle" => Some("Gradle cache"),
         // Go
@@ -1770,16 +1883,16 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
         ".dart_tool" => Some("Dart tool cache"),
         "build" if p.join("pubspec.yaml").exists() => Some("Flutter build"),
         // Infra
-        ".terraform"        => Some("Terraform"),
+        ".terraform" => Some("Terraform"),
         ".terragrunt-cache" => Some("Terragrunt"),
-        ".pulumi"           => Some("Pulumi"),
+        ".pulumi" => Some("Pulumi"),
         // Other
         ".stack-work" => Some("Haskell Stack"),
         "_build" if p.join("mix.exs").exists() => Some("Elixir build"),
-        ".elixir_ls"  => Some("Elixir LS"),
-        ".metals"     => Some("Scala Metals"),
+        ".elixir_ls" => Some("Elixir LS"),
+        ".metals" => Some("Scala Metals"),
         "elm-stuff" if p.join("elm.json").exists() => Some("Elm"),
-        ".zig-cache"  => Some("Zig cache"),
+        ".zig-cache" => Some("Zig cache"),
         _ => None,
     }
 }
@@ -1848,7 +1961,9 @@ fn scan_projects_impl(
                 return Err("Project scan stopped by user".to_string());
             }
             let path = PathBuf::from(normalize_path(raw_path));
-            if !path.is_dir() || !seen.insert(path.clone()) { continue; }
+            if !path.is_dir() || !seen.insert(path.clone()) {
+                continue;
+            }
             directories_scanned += 1;
             if let Some(candidate) = project_artifact_candidate(&path, artifact_rules) {
                 candidates.push(candidate);
@@ -1866,11 +1981,13 @@ fn scan_projects_impl(
                 return Err("Project scan stopped by user".to_string());
             }
             let entry = match it.next() {
-                None          => break,
-                Some(Err(_))  => continue,
-                Some(Ok(e))   => e,
+                None => break,
+                Some(Err(_)) => continue,
+                Some(Ok(e)) => e,
             };
-            if !entry.file_type().is_dir() { continue; }
+            if !entry.file_type().is_dir() {
+                continue;
+            }
 
             directories_scanned += 1;
 
@@ -1966,7 +2083,10 @@ fn scan_projects_impl(
 
             for event in receiver {
                 match event {
-                    ArtifactSizingEvent::Progress { path, files_scanned } => {
+                    ArtifactSizingEvent::Progress {
+                        path,
+                        files_scanned,
+                    } => {
                         emit_project_progress(
                             app,
                             ProjectProgress {
@@ -2036,9 +2156,10 @@ fn scan_projects_impl(
         .map(|(_, artifact)| artifact)
         .collect();
 
-    let total_bytes     = artifacts.iter().map(|a| a.size_bytes).sum();
-    let artifact_count  = artifacts.len() as u64;
-    let project_count   = artifacts.iter()
+    let total_bytes = artifacts.iter().map(|a| a.size_bytes).sum();
+    let artifact_count = artifacts.len() as u64;
+    let project_count = artifacts
+        .iter()
         .map(|a| a.project_path.as_str())
         .collect::<HashSet<_>>()
         .len() as u64;
@@ -2071,8 +2192,13 @@ fn cancel_project_scan() -> Result<(), String> {
     Ok(())
 }
 
-fn project_artifact_candidate(path: &Path, rules: Option<&[ArtifactRule]>) -> Option<ProjectArtifact> {
-    if !path.is_dir() { return None; }
+fn project_artifact_candidate(
+    path: &Path,
+    rules: Option<&[ArtifactRule]>,
+) -> Option<ProjectArtifact> {
+    if !path.is_dir() {
+        return None;
+    }
     let name = path.file_name()?.to_string_lossy();
     let kind = if let Some(rules) = rules {
         detect_configured_artifact_kind(&name, path, rules)?
@@ -2091,7 +2217,8 @@ fn project_artifact_candidate(path: &Path, rules: Option<&[ArtifactRule]>) -> Op
         path: path.display().to_string(),
         dir_name: name.to_string(),
         artifact_kind: kind,
-        project_name: parent.file_name()
+        project_name: parent
+            .file_name()
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_default(),
         project_path: parent.display().to_string(),
@@ -2168,8 +2295,8 @@ fn delete_artifacts_impl(
         };
 
         match result {
-            Ok(_)    => freed += size,
-            Err(e)   => errors.push(format!("{}: {}", path_str, e)),
+            Ok(_) => freed += size,
+            Err(e) => errors.push(format!("{}: {}", path_str, e)),
         }
 
         emit_project_progress(
@@ -2220,7 +2347,16 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![discover, dry_run, clean, list_path, scan_projects, cancel_project_scan, delete_artifacts, memory_usage])
+        .invoke_handler(tauri::generate_handler![
+            discover,
+            dry_run,
+            clean,
+            list_path,
+            scan_projects,
+            cancel_project_scan,
+            delete_artifacts,
+            memory_usage
+        ])
         .run(tauri::generate_context!())
         .expect("error while running macOS Dev Cache Cleaner");
 }
@@ -2236,7 +2372,9 @@ mod windows_tests {
         assert!(targets.iter().any(|s| s.id == "cargo-registry-cache"));
         for spec in targets {
             if let TargetKind::Path { patterns } = spec.kind {
-                assert!(patterns.iter().all(|p| !p.contains("Library/") && !p.starts_with("/private/")));
+                assert!(patterns
+                    .iter()
+                    .all(|p| !p.contains("Library/") && !p.starts_with("/private/")));
             }
         }
     }
@@ -2245,7 +2383,10 @@ mod windows_tests {
     fn native_paths_and_home_are_supported() {
         assert_eq!(normalize_path(r"D:\work\app"), "D:/work/app");
         assert_eq!(normalize_path(r"\\server\share\app"), "//server/share/app");
-        assert_eq!(PathBuf::from(normalize_path(r"~\work")), dirs::home_dir().unwrap().join("work"));
+        assert_eq!(
+            PathBuf::from(normalize_path(r"~\work")),
+            dirs::home_dir().unwrap().join("work")
+        );
     }
 
     #[test]

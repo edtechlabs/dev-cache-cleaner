@@ -35,3 +35,8 @@ lto = true
 opt-level = "s"
 panic = "abort"
 strip = true
+
+# Line tables keep Windows PDBs below the MSVC linker size limit while retaining
+# source locations in development backtraces.
+[profile.dev]
+debug = 1
