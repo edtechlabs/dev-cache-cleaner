@@ -1,6 +1,6 @@
-# macOS Dev Cache Cleaner
+# Dev Cache Cleaner
 
-A local-only macOS utility for developer machines with heavy AI/dev stacks.
+A local-only Windows and macOS utility for developer machines with heavy AI/dev stacks.
 Two tools in one: a **GUI app** (Tauri/Rust) and a standalone **CLI binary**.
 
 ## Current functionality
@@ -176,8 +176,8 @@ Output:
 
 ```
 src-tauri/target/release/bundle/
-  macos/macOS Dev Cache Cleaner.app   ← self-contained app bundle (~4 MB)
-  dmg/macOS Dev Cache Cleaner_*.dmg   ← distributable disk image
+  macos/Dev Cache Cleaner.app   ← self-contained app bundle (~4 MB)
+  dmg/Dev Cache Cleaner_*.dmg   ← distributable disk image
 ```
 
 The build takes roughly 45–90 seconds on Apple Silicon.
@@ -200,7 +200,7 @@ without a security warning on the first launch.
 ./install_app.sh
 ```
 
-Copies `…/bundle/macos/macOS Dev Cache Cleaner.app` → `/Applications/`,
+Copies `…/bundle/macos/Dev Cache Cleaner.app` → `/Applications/`,
 strips `com.apple.quarantine`, and refreshes the Launch Services database.
 
 #### Build then install in one step
@@ -226,7 +226,7 @@ shortcut as usual.
 ./install_app.sh --uninstall
 ```
 
-Moves `/Applications/macOS Dev Cache Cleaner.app` to Trash via Finder.
+Moves `/Applications/Dev Cache Cleaner.app` to Trash via Finder.
 
 #### All flags
 
@@ -390,7 +390,7 @@ cache-cleaner service uninstall
 ```
 
 The service creates a LaunchAgent plist at
-`~/Library/LaunchAgents/com.macos-dev-cache-cleaner.plist` and logs to
+`~/Library/LaunchAgents/com.dev-cache-cleaner.plist` and logs to
 `~/Library/Logs/dev-cache-cleaner-autorun.log`.
 
 > **Note:** always pass `--bin <absolute-path>` pointing to a stable install
@@ -512,3 +512,7 @@ use Windows Task Scheduler for scheduled CLI cleanup.
 
 Windows development builds use line-table debug information to keep Tauri's
 large PDB files within MSVC linker limits while retaining backtrace locations.
+
+The application is named **Dev Cache Cleaner** on every platform. The Windows
+executable is `src-tauri/target/release/dev-cache-cleaner.exe`; `run_app.bat`
+launches it. Rebuild with `build_app.bat` when updating an older checkout.

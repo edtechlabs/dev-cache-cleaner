@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_app.sh — install macOS Dev Cache Cleaner to /Applications
+# install_app.sh — install Dev Cache Cleaner to /Applications
 #
 # Usage:
 #   ./install_app.sh              # finds built .app automatically, installs to /Applications
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-APP_NAME="macOS Dev Cache Cleaner"
+APP_NAME="Dev Cache Cleaner"
 APP_BUNDLE="${APP_NAME}.app"
 INSTALL_DIR="/Applications"
 BUNDLE_DIR="$SCRIPT_DIR/src-tauri/target/release/bundle"

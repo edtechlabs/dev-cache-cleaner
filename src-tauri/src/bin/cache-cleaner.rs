@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use macos_dev_cache_cleaner_lib::{
+use dev_cache_cleaner_lib::{
     run_clean, run_discover, run_dry_run, CacheItem, CleanRequest, DiscoverOptions, DiscoverReport,
     PlanReport, Risk,
 };
@@ -516,8 +516,8 @@ fn open_fda_settings() {
 
 // ── service management ────────────────────────────────────────────────────────
 
-const PLIST_LABEL: &str = "com.macos-dev-cache-cleaner.autorun";
-const PLIST_FILE: &str = "com.macos-dev-cache-cleaner.plist";
+const PLIST_LABEL: &str = "com.dev-cache-cleaner.autorun";
+const PLIST_FILE: &str = "com.dev-cache-cleaner.plist";
 const LOG_FILE: &str = "dev-cache-cleaner-autorun.log";
 
 fn plist_path() -> PathBuf {
@@ -757,7 +757,7 @@ fn xml_escape(s: &str) -> String {
 
 fn print_scan(report: &DiscoverReport) {
     const W: usize = 112;
-    println!("macOS Dev Cache Cleaner — scan results");
+    println!("Dev Cache Cleaner — scan results");
     println!("{}", "─".repeat(W));
 
     let mut sorted = report.items.clone();

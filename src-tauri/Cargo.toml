@@ -1,14 +1,14 @@
 [package]
-name = "macos-dev-cache-cleaner"
+name = "dev-cache-cleaner"
 version = "0.1.0"
-default-run = "macos-dev-cache-cleaner"
-description = "Safe macOS developer cache cleaner for AI/dev machines"
+default-run = "dev-cache-cleaner"
+description = "Safe developer cache cleaner for AI/dev machines"
 authors = ["CS Teacher + ChatGPT"]
 edition = "2021"
 license = "MIT"
 
 [lib]
-name = "macos_dev_cache_cleaner_lib"
+name = "dev_cache_cleaner_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -2358,7 +2358,7 @@ pub fn run() {
             memory_usage
         ])
         .run(tauri::generate_context!())
-        .expect("error while running macOS Dev Cache Cleaner");
+        .expect("error while running Dev Cache Cleaner");
 }
 
 #[cfg(all(test, windows))]

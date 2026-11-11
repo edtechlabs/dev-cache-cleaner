@@ -140,7 +140,7 @@ app.innerHTML = `
     <main class="shell">
       <section class="hero card">
         <div>
-          <p class="eyebrow">local-only macOS utility</p>
+          <p class="eyebrow">local-only developer utility</p>
           <h1>Dev Cache Cleaner</h1>
           <p class="subline">Discover, dry-run, and clean developer caches for Homebrew, JetBrains, Ollama, Hugging Face, Docker, Python, Rust, Node, Android, and related AI tooling.</p>
         </div>

@@ -195,7 +195,7 @@ SEARCH_DIRS=("$HOME/.local/bin" "/usr/local/bin" "/opt/homebrew/bin" "/usr/bin")
 
 # ── stop service if running ───────────────────────────────────────────────────
 
-PLIST="$HOME/Library/LaunchAgents/com.macos-dev-cache-cleaner.plist"
+PLIST="$HOME/Library/LaunchAgents/com.dev-cache-cleaner.plist"
 if [[ -f "$PLIST" ]]; then
   echo "Stopping LaunchAgent service…"
   launchctl unload -w "$PLIST" 2>/dev/null || true
