@@ -9,7 +9,9 @@
     "tauri:build": "tauri build",
     "check:rust": "cd src-tauri && cargo check",
     "fmt:rust": "cd src-tauri && cargo fmt",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "node --test",
+    "test:rust": "cd src-tauri && cargo test --locked --all-targets"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.5.0",

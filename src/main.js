@@ -1,3 +1,4 @@
+import { relativeArtifactPath } from './path-utils.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -1132,16 +1133,6 @@ function renderArtifactRow(artifact) {
     </tr>`;
 }
 
-function relativeArtifactPath(path, root) {
-  path = path.replace(/\\/g, '/');
-  const normalizedRoot = root.replace(/\\/g, '/').replace(/\/+$/, '');
-  const windows = /^[a-z]:/i.test(path) || path.startsWith('//');
-  const comparable = windows ? path.toLowerCase() : path;
-  const comparableRoot = windows ? normalizedRoot.toLowerCase() : normalizedRoot;
-  if (comparable === comparableRoot) return '.';
-  const prefix = `${normalizedRoot}/`;
-  return comparable.startsWith(windows ? prefix.toLowerCase() : prefix) ? path.slice(prefix.length) : path;
-}
 
 function updateScanStats(items = filteredArtifacts()) {
   const total = scanState.report?.totalBytes ?? 0;

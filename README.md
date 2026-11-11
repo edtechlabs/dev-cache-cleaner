@@ -521,3 +521,19 @@ launches it. Rebuild with `build_app.bat` when updating an older checkout.
 Windows memory polling uses the native API, and filesystem scans, cleanup, and
 tree sizing run on background workers to keep the window responsive. See
 [PERFORMANCE.md](PERFORMANCE.md) for measurements and the Windows profiling script.
+
+## Tests and continuous integration
+
+Run `npm test` for path-display regressions (Windows drives, UNC, POSIX roots,
+case handling, and sibling prefixes). After activating the Rust environment with
+`. .\dev_env.ps1` on Windows, run `npm run test:rust` for all Rust targets.
+Scanner tests use disposable temporary projects to check marker requirements,
+source-control exclusions, exact sizes, and read-only tree browsing. They also
+check the high-risk opt-in gate and worker-thread execution. Windows adds native
+memory and cache-path tests. The manual performance benchmark stays ignored.
+
+GitHub Actions runs on pushes to `main`, pull requests, and manual dispatches.
+Windows and macOS jobs install locked npm dependencies, run frontend tests and
+build, check Rust formatting and all targets, run Rust tests, build a standalone
+desktop executable without installers, and smoke-test the CLI with `--help`.
+CI never cleans the runner's real caches or publishes a release.

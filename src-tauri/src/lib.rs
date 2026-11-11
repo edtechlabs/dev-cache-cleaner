@@ -2382,9 +2382,78 @@ pub fn run() {
         .expect("error while running Dev Cache Cleaner");
 }
 
-#[cfg(all(test, windows))]
-mod windows_tests {
+#[cfg(test)]
+mod tests {
     use super::*;
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "dev-cache-cleaner-test-{}-{}",
+                std::process::id(),
+                Utc::now().timestamp_nanos_opt().unwrap()
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn project_scan_requires_markers_and_skips_source_control() {
+        let fixture = Fixture::new();
+        for directory in ["real/target", "ordinary/target", ".git/node_modules"] {
+            fs::create_dir_all(fixture.0.join(directory)).unwrap();
+        }
+        fs::write(fixture.0.join("real/Cargo.toml"), "[package]").unwrap();
+        fs::write(fixture.0.join("real/target/output"), b"build artifact").unwrap();
+        let report = run_scan_projects(ProjectScanOptions {
+            root: fixture.0.display().to_string(),
+            min_size_bytes: Some(0),
+            max_depth: Some(8),
+            artifact_paths: None,
+            artifact_rules: None,
+        })
+        .unwrap();
+        assert_eq!(report.artifacts.len(), 1);
+        assert_eq!(report.artifacts[0].artifact_kind, "Rust build");
+        assert_eq!(report.total_bytes, 14);
+        assert!(fixture.0.join("real/target/output").exists());
+    }
+
+    #[test]
+    fn tree_sizes_files_without_removing_them() {
+        let fixture = Fixture::new();
+        fs::write(fixture.0.join("small"), b"ab").unwrap();
+        fs::create_dir(fixture.0.join("nested")).unwrap();
+        fs::write(fixture.0.join("nested/large"), b"1234567890").unwrap();
+        let nodes =
+            tauri::async_runtime::block_on(list_path(fixture.0.display().to_string())).unwrap();
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(nodes[0].name, "nested");
+        assert_eq!(nodes[0].size_bytes, 10);
+        assert_eq!(nodes[1].size_bytes, 2);
+        assert!(fixture.0.join("nested/large").exists());
+    }
+
+    #[test]
+    fn high_risk_cleanup_requires_explicit_opt_in() {
+        let plan = run_dry_run(CleanRequest {
+            selected_ids: vec!["ollama-model-store".into()],
+            permanent: false,
+            allow_commands: false,
+            include_high_risk: false,
+        })
+        .unwrap();
+        assert!(plan.dry_run);
+        assert!(plan.actions.is_empty());
+        assert!(plan.warnings.iter().any(|w| w.contains("high-risk")));
+    }
 
     #[test]
     fn background_work_runs_off_the_caller_thread() {
@@ -2400,6 +2469,7 @@ mod windows_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn native_memory_poll_returns_working_set_bytes() {
         assert!(read_memory_usage().unwrap() > 0);
         assert!(tauri::async_runtime::block_on(memory_usage()).unwrap() > 0);
@@ -2407,6 +2477,7 @@ mod windows_tests {
 
     #[test]
     #[ignore = "manual before/after timing; starts PowerShell seven times"]
+    #[cfg(windows)]
     fn profile_memory_poll() {
         use std::time::Instant;
         let mut old_ms = Vec::new();
@@ -2434,6 +2505,7 @@ mod windows_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn windows_targets_exclude_apple_locations() {
         let targets = specs();
         assert!(targets.iter().any(|s| s.id == "nuget-http-cache"));
@@ -2448,6 +2520,7 @@ mod windows_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn native_paths_and_home_are_supported() {
         assert_eq!(normalize_path(r"D:\work\app"), "D:/work/app");
         assert_eq!(normalize_path(r"\\server\share\app"), "//server/share/app");
@@ -2458,6 +2531,7 @@ mod windows_tests {
     }
 
     #[test]
+    #[cfg(windows)]
     fn appdata_patterns_use_the_actual_environment() {
         let mut warnings = Vec::new();
         let paths = expand_special_pattern("%LOCALAPPDATA%/NuGet/v3-cache", &mut warnings);

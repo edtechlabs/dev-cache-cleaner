@@ -1,0 +1,46 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-build:
+    name: Test and build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm run fmt:rust -- --check
+      - run: cargo check --locked --manifest-path src-tauri/Cargo.toml --all-targets
+      - run: npm run test:rust
+      - name: Build desktop executable
+        run: npm run tauri:build -- --debug --no-bundle
+      - name: CLI smoke test (Windows)
+        if: runner.os == 'Windows'
+        run: ./src-tauri/target/debug/cache-cleaner.exe --help
+      - name: CLI smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: ./src-tauri/target/debug/cache-cleaner --help
