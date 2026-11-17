@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "description": "Project artifact directories recognized by the scanner. Paths in requiresOutside are relative to the artifact's parent; paths in requiresInside are relative to the artifact itself.",
   "rules": [
     { "directoryName": "node_modules", "artifactKind": "Node.js deps", "locations": ["any"], "requiresOutside": [], "requiresOutsideAny": [], "requiresInside": [], "url": "https://nodejs.org/" },

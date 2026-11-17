@@ -1,4 +1,5 @@
 import { relativeArtifactPath } from './path-utils.js';
+import { mergeDefaultRules } from './rules-merge.js';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
@@ -82,12 +83,21 @@ function validArtifactRules(rules) {
   );
 }
 
+const ARTIFACT_RULES_VERSION_KEY = `${ARTIFACT_RULES_KEY}.defaults-version`;
+
 function readArtifactRules() {
+  const defaults = defaultArtifactConfig.rules;
   try {
     const parsed = JSON.parse(localStorage.getItem(ARTIFACT_RULES_KEY) || 'null');
-    return validArtifactRules(parsed) ? parsed : defaultArtifactConfig.rules;
+    if (!validArtifactRules(parsed)) return defaults;
+    const seen = Number(localStorage.getItem(ARTIFACT_RULES_VERSION_KEY)) || 0;
+    if (seen >= defaultArtifactConfig.version) return parsed;
+    const merged = mergeDefaultRules(parsed, defaults);
+    localStorage.setItem(ARTIFACT_RULES_KEY, JSON.stringify(merged));
+    localStorage.setItem(ARTIFACT_RULES_VERSION_KEY, String(defaultArtifactConfig.version));
+    return merged;
   } catch (_) {
-    return defaultArtifactConfig.rules;
+    return defaults;
   }
 }
 
@@ -668,6 +678,7 @@ function renderArtifactRulesStatus() {
 function persistArtifactRules() {
   try {
     localStorage.setItem(ARTIFACT_RULES_KEY, JSON.stringify(scanState.artifactRules));
+    localStorage.setItem(ARTIFACT_RULES_VERSION_KEY, String(defaultArtifactConfig.version));
     renderArtifactRulesStatus();
     return true;
   } catch (_) {
