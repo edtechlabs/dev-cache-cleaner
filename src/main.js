@@ -625,10 +625,29 @@ async function cleanSelected() {
   try {
     const plan = await invoke('clean', { request });
     state.lastPlan = plan; setLog(formatPlan(plan)); renderWarnings(plan.warnings || []);
-    const refreshed = await invoke('discover', { options: { includeMissing: false } });
-    state.report = refreshed; updateCategoryOptions(refreshed.items); render();
-  } catch (err) { setLog(`Cleanup error:\n${String(err)}`); }
-  finally { setBusy(false); }
+  } catch (err) {
+    setLog(`Cleanup error:\n${String(err)}`);
+    await refreshAfterCleanup().catch(() => {});
+    setBusy(false);
+    return;
+  }
+  try {
+    await refreshAfterCleanup();
+    setLog(`${formatPlan(state.lastPlan)}\n\nList refreshed: ${state.report.items.length} targets, ${formatBytes(state.report.totalBytes)} remaining.`);
+  } catch (err) {
+    setLog(`${formatPlan(state.lastPlan)}\n\nCleanup finished, but refreshing the list failed:\n${String(err)}`);
+  } finally { setBusy(false); }
+}
+
+// Re-run discovery after a cleanup and drop selections for targets that no
+// longer exist, so the list and the "Selected" total match what is on disk.
+async function refreshAfterCleanup() {
+  const refreshed = await invoke('discover', { options: { includeMissing: false } });
+  const ids = new Set(refreshed.items.map((i) => i.id));
+  state.selected = new Set([...state.selected].filter((id) => ids.has(id)));
+  state.report = refreshed;
+  updateCategoryOptions(refreshed.items);
+  render();
 }
 
 // ── Project Scanner — actions ─────────────────────────────────────────────────

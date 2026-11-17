@@ -13,7 +13,8 @@ The GUI currently provides two tabs:
   crash dumps, shader caches, browser caches and Visual Studio caches. It supports search, risk and category
   filters in three columns with cleanup options aligned beneath them, directory
   browsing, dry-run plans, safe-default selection, and
-  selective cleanup.
+  selective cleanup. After a cleanup the list is
+  refreshed automatically and selections for targets that no longer exist are cleared.
 - **Project Artifact Scanner** recursively scans a chosen root such as
   `~/Code` for supported build and dependency artifacts, reports project,
   artifact type, size, and age. Android projects include Gradle/module
