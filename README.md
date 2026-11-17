@@ -9,7 +9,8 @@ The GUI currently provides two tabs:
 
 - **System Cache Cleaner** discovers known Homebrew, JetBrains, AI/LLM, Apple
   developer, Python, Node, Rust, Java/Android, Docker, Go, Ruby, Dart, PHP,
-  Cloud/DevOps, and macOS log caches. It supports search, risk and category
+  Cloud/DevOps, macOS log caches, and on Windows temp installers,
+  crash dumps, shader caches, browser caches and Visual Studio caches. It supports search, risk and category
   filters in three columns with cleanup options aligned beneath them, directory
   browsing, dry-run plans, safe-default selection, and
   selective cleanup.
@@ -103,7 +104,9 @@ usage and refreshes every three seconds.
 Recursively walks a chosen root directory (e.g. `~/Code`) to find per-project
 artifact directories: `node_modules`, `.venv`, Rust/Maven/Gradle `target`,
 Android `build`/`.cxx` output, `.externalNativeBuild`, `.next`, `.terraform`,
-CocoaPods `Pods`, and 40+ more patterns.
+CocoaPods `Pods`, .NET `bin`/`obj` (next to a `*.csproj`), Visual Studio `.vs`,
+Nx/Astro/Docusaurus/Expo caches, CMake and SwiftPM build folders, and 60+ more patterns.
+Rule markers may use `*.ext` (for example `*.csproj`) to match any file with that extension.
 Results show project name, artifact type, size, and last-modified age
 with colour-coded staleness chips.
 

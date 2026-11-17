@@ -986,6 +986,127 @@ fn base_specs() -> Vec<TargetSpec> {
                 patterns: vec!["~/.composer/cache", "~/Library/Caches/composer"],
             },
         },
+        TargetSpec {
+            id: "npm-logs",
+            label: "npm debug logs",
+            category: "Node / JS",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "npm _logs directory. Only diagnostic logs; npm writes new ones on demand.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/.npm/_logs", "~/AppData/Local/npm-cache/_logs"],
+            },
+        },
+        TargetSpec {
+            id: "bun-cache",
+            label: "Bun install cache",
+            category: "Node / JS",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Bun global package cache. Re-downloaded on next install.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/.bun/install/cache"],
+            },
+        },
+        TargetSpec {
+            id: "deno-cache",
+            label: "Deno cache",
+            category: "Node / JS",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Deno module and compile cache. Re-downloaded on demand.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Caches/deno", "~/.cache/deno"],
+            },
+        },
+        TargetSpec {
+            id: "node-gyp-cache",
+            label: "node-gyp headers cache",
+            category: "Node / JS",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Node headers used to build native addons. Re-downloaded when needed.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Caches/node-gyp", "~/.cache/node-gyp"],
+            },
+        },
+        TargetSpec {
+            id: "electron-cache",
+            label: "Electron download cache",
+            category: "Node / JS",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Downloaded Electron and electron-builder binaries. Re-downloaded on next build.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Caches/electron", "~/Library/Caches/electron-builder", "~/.cache/electron", "~/.cache/electron-builder"],
+            },
+        },
+        TargetSpec {
+            id: "playwright-browsers",
+            label: "Playwright browsers",
+            category: "Node / JS",
+            risk: Risk::Medium,
+            default_selected: false,
+            note: "Downloaded Chromium/Firefox/WebKit builds. Reinstall with `npx playwright install` (about 1 GB).",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Caches/ms-playwright", "~/.cache/ms-playwright"],
+            },
+        },
+        TargetSpec {
+            id: "puppeteer-cache",
+            label: "Puppeteer browsers",
+            category: "Node / JS",
+            risk: Risk::Medium,
+            default_selected: false,
+            note: "Chrome builds downloaded by Puppeteer. Re-downloaded on next launch.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/.cache/puppeteer"],
+            },
+        },
+        TargetSpec {
+            id: "cypress-cache",
+            label: "Cypress binary cache",
+            category: "Node / JS",
+            risk: Risk::Medium,
+            default_selected: false,
+            note: "Cypress app binaries. Re-downloaded with `cypress install`.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Caches/Cypress", "~/.cache/Cypress"],
+            },
+        },
+        TargetSpec {
+            id: "pre-commit-cache",
+            label: "pre-commit environments",
+            category: "Python",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Hook environments created by pre-commit. Rebuilt on next run.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/.cache/pre-commit"],
+            },
+        },
+        TargetSpec {
+            id: "vscode-caches",
+            label: "VS Code caches",
+            category: "IDEs",
+            risk: Risk::Low,
+            default_selected: true,
+            note: "Cached extension VSIXs, compiled code cache, GPU and HTTP caches. VS Code recreates them.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/Library/Application Support/Code/CachedExtensionVSIXs", "~/Library/Application Support/Code/CachedData", "~/Library/Application Support/Code/Cache", "~/Library/Application Support/Code/Code Cache", "~/Library/Application Support/Code/GPUCache"],
+            },
+        },
+        TargetSpec {
+            id: "codex-runtime-cache",
+            label: "Codex runtimes and temp",
+            category: "AI / LLM",
+            risk: Risk::Medium,
+            default_selected: false,
+            note: "Codex downloaded runtimes, cache and temp folders. Close Codex before cleaning; they are re-downloaded.",
+            kind: TargetKind::Path {
+                patterns: vec!["~/.cache/codex-runtimes", "~/.codex/.tmp", "~/.codex/cache"],
+            },
+        },
     ]
 }
 
@@ -1016,6 +1137,25 @@ fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
             "cursor-logs" => Some(vec!["%APPDATA%/Cursor/logs"]),
             "cursor-workspace-storage" => Some(vec!["%APPDATA%/Cursor/User/workspaceStorage"]),
             "composer-cache" => Some(vec!["%LOCALAPPDATA%/Composer"]),
+            "deno-cache" => Some(vec!["%LOCALAPPDATA%/deno"]),
+            "node-gyp-cache" => Some(vec!["%LOCALAPPDATA%/node-gyp/Cache"]),
+            "electron-cache" => Some(vec![
+                "%LOCALAPPDATA%/electron/Cache",
+                "%LOCALAPPDATA%/electron-builder/Cache",
+            ]),
+            "playwright-browsers" => Some(vec!["%LOCALAPPDATA%/ms-playwright"]),
+            "cypress-cache" => Some(vec!["%LOCALAPPDATA%/Cypress/Cache"]),
+            "npm-logs" => Some(vec![
+                "%LOCALAPPDATA%/npm-cache/_logs",
+                "%APPDATA%/npm-cache/_logs",
+            ]),
+            "vscode-caches" => Some(vec![
+                "%APPDATA%/Code/CachedExtensionVSIXs",
+                "%APPDATA%/Code/CachedData",
+                "%APPDATA%/Code/Cache",
+                "%APPDATA%/Code/Code Cache",
+                "%APPDATA%/Code/GPUCache",
+            ]),
             "ollama-logs" => Some(vec![
                 "%LOCALAPPDATA%/Ollama/server.log",
                 "%LOCALAPPDATA%/Ollama/app.log",
@@ -1044,6 +1184,67 @@ fn windows_specs(specs: Vec<TargetSpec>) -> Vec<TargetSpec> {
         }
         result.push(spec);
     }
+    result.push(TargetSpec {
+        id: "windows-temp-installers",
+        label: "Leftover installer temp files",
+        category: "Windows",
+        risk: Risk::Low,
+        default_selected: true,
+        note: "Docker Desktop update downloads, VS Code installer temp, pip/npm/Chocolatey temp folders in the user Temp folder. Files in use are skipped with an error.",
+        kind: TargetKind::Path {
+            patterns: vec!["%LOCALAPPDATA%/Temp/DockerDesktopUpdates", "%LOCALAPPDATA%/Temp/vscode-stable-*", "%LOCALAPPDATA%/Temp/pip-*", "%LOCALAPPDATA%/Temp/npm-*", "%LOCALAPPDATA%/Temp/chocolatey"],
+        },
+    });
+    result.push(TargetSpec {
+        id: "windows-crash-dumps",
+        label: "Crash dumps and shader caches",
+        category: "Windows",
+        risk: Risk::Low,
+        default_selected: true,
+        note: "Application crash dumps and the DirectX shader cache. Windows and games recreate them.",
+        kind: TargetKind::Path {
+            patterns: vec!["%LOCALAPPDATA%/CrashDumps", "%LOCALAPPDATA%/D3DSCache"],
+        },
+    });
+    result.push(TargetSpec {
+        id: "edge-chrome-caches",
+        label: "Edge and Chrome HTTP caches",
+        category: "Browsers",
+        risk: Risk::Low,
+        default_selected: false,
+        note: "Disk, code and GPU caches of the default browser profiles. Close the browsers first; logins are kept.",
+        kind: TargetKind::Path {
+            patterns: vec!["%LOCALAPPDATA%/Microsoft/Edge/User Data/Default/Cache", "%LOCALAPPDATA%/Microsoft/Edge/User Data/Default/Code Cache", "%LOCALAPPDATA%/Microsoft/Edge/User Data/Default/GPUCache", "%LOCALAPPDATA%/Google/Chrome/User Data/Default/Cache", "%LOCALAPPDATA%/Google/Chrome/User Data/Default/Code Cache", "%LOCALAPPDATA%/Google/Chrome/User Data/Default/GPUCache"],
+        },
+    });
+    result.push(TargetSpec {
+        id: "visual-studio-cache",
+        label: "Visual Studio component and template cache",
+        category: "Visual Studio",
+        risk: Risk::Low,
+        default_selected: false,
+        note: "Visual Studio ComponentModelCache and per-version caches. Rebuilt on next launch.",
+        kind: TargetKind::Path {
+            patterns: vec![
+                "%LOCALAPPDATA%/Microsoft/VisualStudio/*/ComponentModelCache",
+                "%LOCALAPPDATA%/Microsoft/VisualStudio/*/Cache",
+            ],
+        },
+    });
+    result.push(TargetSpec {
+        id: "winget-cache",
+        label: "WinGet installer cache",
+        category: "Windows",
+        risk: Risk::Low,
+        default_selected: false,
+        note: "Downloaded WinGet installer packages.",
+        kind: TargetKind::Path {
+            patterns: vec![
+                "%LOCALAPPDATA%/Temp/WinGet",
+                "%LOCALAPPDATA%/Microsoft/WinGet/Cache",
+            ],
+        },
+    });
     result.push(TargetSpec {
         id: "nuget-http-cache",
         label: "NuGet HTTP cache",
@@ -1814,6 +2015,24 @@ fn artifact_scan_skip(name: &str) -> bool {
     )
 }
 
+/// True when `name` exists under `base`. A name of the form `*.ext` matches
+/// any direct child with that extension (e.g. `*.csproj`).
+fn marker_exists(base: &Path, name: &str) -> bool {
+    match name.strip_prefix("*.") {
+        Some(ext) => fs::read_dir(base)
+            .map(|entries| {
+                entries.flatten().any(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+                })
+            })
+            .unwrap_or(false),
+        None => base.join(name).exists(),
+    }
+}
+
 fn detect_configured_artifact_kind(
     name: &str,
     path: &Path,
@@ -1834,7 +2053,7 @@ fn detect_configured_artifact_kind(
         if rule
             .requires_outside
             .iter()
-            .any(|required| !parent.join(required).exists())
+            .any(|required| !marker_exists(parent, required))
         {
             return None;
         }
@@ -1842,14 +2061,14 @@ fn detect_configured_artifact_kind(
             && !rule
                 .requires_outside_any
                 .iter()
-                .any(|required| parent.join(required).exists())
+                .any(|required| marker_exists(parent, required))
         {
             return None;
         }
         if rule
             .requires_inside
             .iter()
-            .any(|required| !path.join(required).exists())
+            .any(|required| !marker_exists(path, required))
         {
             return None;
         }
@@ -1914,8 +2133,37 @@ fn detect_artifact_kind(name: &str, path: &Path) -> Option<&'static str> {
         ".metals" => Some("Scala Metals"),
         "elm-stuff" if p.join("elm.json").exists() => Some("Elm"),
         ".zig-cache" => Some("Zig cache"),
+        // .NET / Visual Studio
+        "bin" | "obj" if dotnet_project_dir(p) => Some(".NET build"),
+        ".vs" if marker_exists(p, "*.sln") => Some("Visual Studio cache"),
+        // JS frameworks and tooling
+        ".nx" if p.join("nx.json").exists() => Some("Nx cache"),
+        ".astro" if p.join("package.json").exists() => Some("Astro cache"),
+        ".docusaurus" if p.join("package.json").exists() => Some("Docusaurus cache"),
+        ".expo" if p.join("package.json").exists() => Some("Expo cache"),
+        ".vercel" if p.join("package.json").exists() => Some("Vercel build"),
+        ".wrangler" if p.join("package.json").exists() => Some("Wrangler cache"),
+        ".output" if p.join("package.json").exists() => Some("Nuxt/Nitro output"),
+        // Python
+        ".hypothesis" => Some("Hypothesis cache"),
+        ".ipynb_checkpoints" => Some("Jupyter checkpoints"),
+        ".pytype" => Some("pytype cache"),
+        // Native / other
+        "cmake-build-debug" | "cmake-build-release" if p.join("CMakeLists.txt").exists() => {
+            Some("CMake build")
+        }
+        ".build" if p.join("Package.swift").exists() => Some("SwiftPM build"),
+        "zig-out" if p.join("build.zig").exists() => Some("Zig output"),
+        ".serverless" if p.join("serverless.yml").exists() => Some("Serverless"),
+        ".aws-sam" => Some("AWS SAM build"),
         _ => None,
     }
+}
+
+fn dotnet_project_dir(dir: &Path) -> bool {
+    ["*.csproj", "*.fsproj", "*.vbproj"]
+        .iter()
+        .any(|m| marker_exists(dir, m))
 }
 
 /// Returns true when an artifact is inside a directory tree that looks like
@@ -2014,7 +2262,11 @@ fn scan_projects_impl(
 
             let name = entry.file_name().to_string_lossy();
 
-            if artifact_scan_skip(&name) {
+            // `bin` is normally a system directory, but next to a .NET project it
+            // is build output.
+            let is_dotnet_bin =
+                name == "bin" && entry.path().parent().is_some_and(dotnet_project_dir);
+            if !is_dotnet_bin && artifact_scan_skip(&name) {
                 it.skip_current_dir();
                 continue;
             }
@@ -2424,6 +2676,48 @@ mod tests {
         assert_eq!(report.artifacts[0].artifact_kind, "Rust build");
         assert_eq!(report.total_bytes, 14);
         assert!(fixture.0.join("real/target/output").exists());
+    }
+
+    #[test]
+    fn dotnet_and_marker_globs_are_detected() {
+        let fixture = Fixture::new();
+        for directory in ["app/bin", "app/obj", "plain/bin"] {
+            fs::create_dir_all(fixture.0.join(directory)).unwrap();
+        }
+        fs::write(fixture.0.join("app/App.csproj"), "<Project/>").unwrap();
+        fs::write(fixture.0.join("app/bin/a.dll"), b"x").unwrap();
+        fs::write(fixture.0.join("app/obj/b.dll"), b"x").unwrap();
+        fs::write(fixture.0.join("plain/bin/c"), b"x").unwrap();
+        let report = run_scan_projects(ProjectScanOptions {
+            root: fixture.0.display().to_string(),
+            min_size_bytes: Some(0),
+            max_depth: Some(8),
+            artifact_paths: None,
+            artifact_rules: None,
+        })
+        .unwrap();
+        assert_eq!(report.artifacts.len(), 2);
+        assert!(report
+            .artifacts
+            .iter()
+            .all(|a| a.artifact_kind == ".NET build"));
+    }
+
+    #[test]
+    fn new_cache_targets_are_registered_with_unique_ids() {
+        let targets = specs();
+        let mut ids = HashSet::new();
+        for spec in &targets {
+            assert!(ids.insert(spec.id), "duplicate id {}", spec.id);
+        }
+        for id in [
+            "npm-logs",
+            "playwright-browsers",
+            "vscode-caches",
+            "bun-cache",
+        ] {
+            assert!(targets.iter().any(|s| s.id == id), "missing {id}");
+        }
     }
 
     #[test]
