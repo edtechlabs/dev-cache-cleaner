@@ -121,6 +121,7 @@ with colour-coded staleness chips.
 | `build_app.sh` | Build the production `.app` and `.dmg` |
 | `install_app.sh` | Install / uninstall the `.app` to `/Applications` |
 | `deploy.sh` | Build and package the CLI binary as a distributable archive |
+| `deploy_windows.ps1` / `.bat` | Build the Windows MSI and NSIS installers and copy them, with the CLI, into the git-ignored `deploy/` folder (`-NoBuild` only copies the last build) |
 
 ---
 

@@ -30,3 +30,6 @@ tasks/
 
 # Project-scoped Rust toolchain and downloads
 .tools/
+
+# Built installers collected by deploy_windows.ps1
+deploy/
